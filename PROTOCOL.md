@@ -22,6 +22,11 @@ picker and there is nothing a page can do about it. Filtering on the vendor id
 at least leaves it as the only entry in the list. Tested working on every port
 tried, including a monitor hub.
 
+It has no USB serial number either (Windows gives it a generated instance id,
+such as `9&17FE9C48&0&4`). Chrome only keeps WebHID permission across a replug
+for devices that have one, so after unplugging, the page gets no `connect`
+event and has to ask through the picker again.
+
 ## Frame format
 
 Both directions, padded with zeros to fill the 41-byte report, 0x04 last.

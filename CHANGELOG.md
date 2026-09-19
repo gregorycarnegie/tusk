@@ -23,9 +23,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - What was called the prime (`0x24`) is `RWD_LEDS`, and the read (`0xD7`) is
   `RWD_READ_MIFARE`. Code and docs now use those names.
 
+### Removed
+
+- Automatic reconnection after a replug, which 0.1.0 listed as a feature but
+  which never ran. The reader has no USB serial number, so Chrome drops the
+  permission on unplug and never reports the reader coming back. The status
+  now says to click **Connect reader** instead.
+
 ### Fixed
 
-- A 4-byte Mifare UID ending in `00` was treated as no card.
+- A Mifare UID ending in `00` was treated as no card or shown short. UIDs are
+  now cut at 4, 7 or 10 bytes, the sizes Mifare uses.
+- "Ready" was shown once the handshake had been written, whether or not the
+  reader answered. It now waits for the first reply to a read.
+- A reader that stopped answering while still accepting writes kept showing
+  the last token. The display clears after four polls without an answer.
+- Startup and the connect button could both start a polling loop for
+  the same reader, and an old loop ending could wipe a newer connection's
+  state. The reader is now claimed before the first await, and only the newest
+  connection resets shared state.
+- The frame builder claimed to panic on an oversized payload but overwrote the
+  checksum instead. It now panics.
 
 ## [0.1.0] - 2026-09-19
 
@@ -40,8 +58,6 @@ the browser, with no Net2 software running.
   read. Without it a freshly plugged-in device refuses every command.
 - Token polling four times a second: prime with opcode `0x24`, collect with
   `0xD7`, decode, display.
-- Automatic reattachment when the reader is unplugged and plugged back in,
-  including into a different USB port.
 - `PROTOCOL.md`, documenting the reverse-engineered protocol: framing,
   checksum, the `Elephant` XOR obfuscation and its phase rule, the plaintext
   and obfuscated dialects, the handshake, and the command map.

@@ -2,9 +2,7 @@ use leptos::prelude::*;
 use leptos::reactive::owner::StoredValue;
 use leptos::task::spawn_local;
 use wasm_bindgen::prelude::*;
-use web_sys::{
-    HidConnectionEvent, HidDevice, HidDeviceFilter, HidDeviceRequestOptions, HidInputReportEvent,
-};
+use web_sys::{HidDevice, HidDeviceFilter, HidDeviceRequestOptions, HidInputReportEvent};
 
 /// Paxton Net2 desktop reader: USB\VID_1071&PID_0001, HID vendor-defined.
 const PAXTON_VID: u32 = 0x1071;
@@ -31,6 +29,12 @@ const POLL_MS: i32 = 250;
 
 /// A reset leaves the write promise pending forever, so give up on it.
 const SEND_TIMEOUT_MS: i32 = 500;
+
+/// Polls in a row without an answer before the display stops being trusted.
+/// Writes can keep succeeding while no replies come back.
+const MAX_MISSES: u32 = 4;
+
+const READY: &str = "Ready - present a token";
 
 /// With the high bit set in the address, everything from the type byte onwards
 /// is XORed with this repeating key, starting at key index (address mod 8).
@@ -82,6 +86,11 @@ const MAX_PAYLOAD: usize = REPORT_BYTES - 6;
 /// length counts STX through checksum, which is how the reader frames replies.
 /// Panics above MAX_PAYLOAD rather than silently truncating a command.
 fn frame(addr: u8, opcode: u8, data: &[u8]) -> [u8; REPORT_BYTES] {
+    // one byte more and the EOT below would overwrite the checksum
+    assert!(
+        data.len() <= MAX_PAYLOAD,
+        "payload does not fit in one report"
+    );
     let len = 5 + data.len();
     let mut buf = [0u8; REPORT_BYTES];
     buf[0] = 0x02;
@@ -161,8 +170,10 @@ fn token(read: Read, reply: &Reply) -> Option<Token> {
     match read {
         Read::Mifare => {
             let end = p.iter().rposition(|b| *b != 0)? + 1;
-            // at least four bytes, so a UID ending in 00 keeps its last byte
-            let uid = &p[..end.max(4)];
+            // Mifare UIDs come in 4, 7 or 10 bytes, so one ending in 00 keeps
+            // its last byte rather than being cut at the zero padding
+            let len = [4, 7, 10].into_iter().find(|n| *n >= end).unwrap_or(end);
+            let uid = &p[..len];
             // Net2 reads the first four bytes big-endian and keeps 8 digits
             let number = u32::from_be_bytes(uid[..4].try_into().ok()?) % 100_000_000;
             Some(Token {
@@ -308,22 +319,63 @@ async fn poll_once(
     send(dev, frame(ADDR, read.opcode(), &[])).await
 }
 
+/// Who has the reader. A connection is told apart by its session rather than
+/// its device, since the same reader can come back as the same HIDDevice.
+#[derive(Default)]
+struct Link {
+    dev: Option<HidDevice>,
+    /// Bumped by every connection; only the newest may reset shared state.
+    session: u32,
+    /// Between claiming the reader and it being open, when `opened()` is
+    /// still false but a second connection must not start.
+    opening: bool,
+}
+
 /// Listen for replies, then keep asking until the reader goes away.
 async fn run(
     dev: HidDevice,
     card: RwSignal<Option<Token>>,
     status: RwSignal<String>,
-    held: StoredValue<Option<HidDevice>, LocalStorage>,
+    link: StoredValue<Link, LocalStorage>,
 ) {
-    if !dev.opened() {
-        if let Err(e) = dev.open().await {
-            status.set(format!("Could not open the reader: {e:?}"));
-            return;
-        }
+    // Claim the reader before the first await, so startup and the button
+    // cannot each start a loop for it. An unplugged reader is closed, which is
+    // what lets a new connection in while the old loop winds down.
+    if link.with_value(|l| l.opening || l.dev.as_ref().is_some_and(|d| d.opened())) {
+        return;
     }
+    let session = link.with_value(|l| l.session) + 1;
+    link.set_value(Link {
+        dev: Some(dev.clone()),
+        session,
+        opening: true,
+    });
+    // not "Ready" until the reader has actually answered a read
+    status.set("Connecting to the reader".into());
+    let owned = || link.with_value(|l| l.session == session);
+    let release = || {
+        link.update_value(|l| {
+            *l = Link {
+                session,
+                ..Link::default()
+            }
+        })
+    };
+
+    // nothing else can claim the reader while `opening` is set, so this
+    // connection still owns it if opening fails
+    if !dev.opened()
+        && let Err(e) = dev.open().await
+    {
+        release();
+        status.set(format!("Could not open the reader: {e:?}"));
+        return;
+    }
+    link.update_value(|l| l.opening = false);
 
     // the handshake includes a Hitag2 read, so that is what replies answer first
     let reading = StoredValue::new_local(Read::Hitag2);
+    let misses = StoredValue::new_local(0u32);
     let listener = dev.clone();
     let cb = Closure::<dyn FnMut(HidInputReportEvent)>::new(move |ev: HidInputReportEvent| {
         // keep `listener` alive: Chrome stops delivering reports once the
@@ -335,6 +387,11 @@ async fn run(
         // the LED command answers with a short ack; anything else answers the read
         if reply.msg_type == ACK && !is_read_reply(&reply) {
             return;
+        }
+        // an answer to a read is the only proof the reader is working
+        misses.set_value(0);
+        if status.with_untracked(|s| s != READY) {
+            status.set(READY.into());
         }
         let read = reading.get_value();
         match token(read, &reply) {
@@ -349,35 +406,47 @@ async fn run(
     });
     dev.set_oninputreport(Some(cb.as_ref().unchecked_ref()));
     cb.forget();
-    held.set_value(Some(dev.clone()));
 
     for (addr, opcode, args) in INIT {
         if let Err(e) = send(&dev, frame(addr, opcode, args)).await {
-            status.set(format!("Reader would not start: {e:?}"));
-            held.set_value(None);
+            if owned() {
+                release();
+                status.set(format!("Reader would not start: {e:?}"));
+            }
             return;
         }
         sleep(40).await;
     }
 
-    status.set("Ready - present a token".into());
     let mut reads = [Read::Mifare, Read::Hitag2].into_iter().cycle();
-    while poll_once(&dev, reads.next().unwrap(), reading)
-        .await
-        .is_ok()
+    while owned()
+        && poll_once(&dev, reads.next().unwrap(), reading)
+            .await
+            .is_ok()
     {
         sleep(POLL_MS).await;
+        // the reply lands during the sleep and resets this
+        misses.update_value(|m| *m += 1);
+        if misses.get_value() == MAX_MISSES {
+            card.set(None);
+            status.set("The reader is not answering".into());
+        }
     }
-    held.set_value(None);
-    card.set(None);
-    status.set("Reader disconnected - plug it back in".into());
+    if owned() {
+        release();
+        card.set(None);
+        // The reader has no USB serial number, so Chrome forgets the
+        // permission when it is unplugged and never tells the page it came
+        // back. Only the picker can grant it again.
+        status.set("Reader unplugged - plug it back in, then click Connect reader".into());
+    }
 }
 
 #[component]
 fn App() -> impl IntoView {
     let card = RwSignal::new(None::<Token>);
     let status = RwSignal::new("Not connected".to_string());
-    let held = StoredValue::new_local(None::<HidDevice>);
+    let link = StoredValue::new_local(Link::default());
 
     let has_hid = js_sys::Reflect::has(&web_sys::window().unwrap().navigator(), &"hid".into())
         .unwrap_or(false);
@@ -391,29 +460,14 @@ fn App() -> impl IntoView {
         if !has_hid {
             return;
         }
-        if let Ok(devices) = hid().get_devices().await {
-            if let Some(dev) = devices
+        if let Ok(devices) = hid().get_devices().await
+            && let Some(dev) = devices
                 .iter()
                 .find(|d| u32::from(d.vendor_id()) == PAXTON_VID)
-            {
-                run(dev, card, status, held).await;
-            }
+        {
+            run(dev, card, status, link).await;
         }
     });
-
-    // the reader coming back on the bus should just work, without a click
-    if has_hid {
-        let cb = Closure::<dyn FnMut(HidConnectionEvent)>::new(move |ev: HidConnectionEvent| {
-            let dev = ev.device();
-            if u32::from(dev.vendor_id()) == PAXTON_VID
-                && !held.get_value().is_some_and(|d| d.opened())
-            {
-                spawn_local(async move { run(dev, card, status, held).await });
-            }
-        });
-        hid().set_onconnect(Some(cb.as_ref().unchecked_ref()));
-        cb.forget();
-    }
 
     let connect = move |_| {
         spawn_local(async move {
@@ -422,7 +476,7 @@ fn App() -> impl IntoView {
             }
             // already polling: the picker is only for granting permission, so
             // say so rather than appearing to do nothing
-            if held.get_value().is_some_and(|d| d.opened()) {
+            if link.with_value(|l| l.dev.as_ref().is_some_and(|d| d.opened())) {
                 status.set("Already connected - present a token".into());
                 return;
             }
@@ -431,7 +485,7 @@ fn App() -> impl IntoView {
             let opts = HidDeviceRequestOptions::new(&[filter]);
             match hid().request_device(&opts).await {
                 Ok(devices) => match devices.get_checked(0) {
-                    Some(dev) => run(dev, card, status, held).await,
+                    Some(dev) => run(dev, card, status, link).await,
                     None => status.set("No reader selected".into()),
                 },
                 Err(e) => status.set(format!("Could not reach the reader: {e:?}")),
@@ -534,6 +588,24 @@ mod tests {
     fn builds_the_two_frames_net2_sends_for_a_read() {
         assert_eq!(hex(&frame(ADDR, OP_LEDS, &[LEDS_ARG])[..6]), "0206886166A8");
         assert_eq!(hex(&frame(ADDR, OP_READ_MIFARE, &[])[..5]), "02058892DE");
+    }
+
+    #[test]
+    fn keeps_a_uid_whole_when_it_ends_in_zero() {
+        let seven_byte_uid = [0x04, 0x5B, 0x7D, 0x40, 0x39, 0x12, 0x00];
+        let mut payload = [0u8; 32];
+        payload[..7].copy_from_slice(&seven_byte_uid);
+        let reply = parse(&frame(ADDR, ACK, &payload)).expect("must parse");
+        assert_eq!(
+            token(Read::Mifare, &reply).expect("a card").hex,
+            "045B7D40391200"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "does not fit")]
+    fn refuses_a_payload_that_would_overwrite_the_checksum() {
+        frame(ADDR, ACK, &[0; MAX_PAYLOAD + 1]);
     }
 
     #[test]

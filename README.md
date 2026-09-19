@@ -4,7 +4,7 @@
 [![Rust](https://img.shields.io/badge/rust-1.98%2B-orange.svg)](https://www.rust-lang.org)
 [![Leptos](https://img.shields.io/badge/leptos-0.8-ef3939.svg)](https://leptos.dev)
 [![Browser](https://img.shields.io/badge/browser-Chrome%20%7C%20Edge-4285f4.svg)](https://developer.mozilla.org/en-US/docs/Web/API/WebHID_API)
-[![Tests](https://img.shields.io/badge/tests-11%20passing-4ade80.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-13%20passing-4ade80.svg)](#testing)
 
 Read tokens from a Paxton Net2 USB desktop reader in the browser, over WebHID.
 No drivers, no Net2 software, no server — put a card on the reader and the
@@ -55,8 +55,9 @@ enumerates. Filtering on Paxton's vendor ID at least leaves it as the only
 entry in the list.
 
 After the first connection the browser remembers permission for that device,
-so reloading reconnects without a prompt. Unplugging and replugging is handled
-automatically.
+so reloading reconnects without a prompt. After unplugging it, click **Connect
+reader** again: the reader has no USB serial number, so Chrome forgets the
+permission when it is unplugged and the page cannot reconnect by itself.
 
 ## How it works
 
