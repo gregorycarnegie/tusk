@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Paxton Net2 reader</title>
+  <link data-trunk rel="rust" />
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0; min-height: 100vh; background: #14161a; color: #e6e8ec;
+      font: 15px/1.5 ui-sans-serif, system-ui, sans-serif;
+      display: grid; place-items: center;
+    }
+    main { width: min(40rem, 92vw); padding: 2rem 0; }
+    h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 1rem; color: #9aa2ae; }
+    button {
+      font: inherit; padding: .55rem 1.1rem; border: 0; border-radius: 7px;
+      background: #3b82f6; color: #fff; cursor: pointer;
+    }
+    button:hover { background: #2563eb; }
+    .status { color: #9aa2ae; margin: .85rem 0 1.5rem; }
+    .token {
+      font: 600 clamp(2rem, 9vw, 4rem)/1.2 ui-monospace, "Cascadia Code", monospace;
+      letter-spacing: .08em; padding: 2rem 1rem; text-align: center;
+      background: #1c1f26; border-radius: 12px; color: #4ade80;
+      transition: color .15s ease;
+    }
+    .token.waiting { color: #39404d; }
+  </style>
+</head>
+<body></body>
+</html>

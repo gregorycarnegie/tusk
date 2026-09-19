@@ -1,0 +1,7 @@
+/target
+/dist
+
+# USB capture of the Net2 software that the protocol was decoded from.
+# Worth keeping on disk - it is the source for every finding in PROTOCOL.md -
+# but too big to track.
+/net2.pcap
