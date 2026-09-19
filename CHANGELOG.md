@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Not yet tested on a real fob.
 - Paxton's names for every opcode, from Net2's `BOARD_CMD` enum, in
   `PROTOCOL.md`.
+- Hosted on GitHub Pages at <https://gregorycarnegie.github.io/tusk/>.
+- GitHub Actions CI: formatting, clippy on the wasm target and the host with
+  warnings as errors, and the tests, on every push and pull request. Pushes
+  to `master` that pass are deployed to Pages.
 - **Copy number** and **Copy hex** buttons, which say "Copied" once the
   clipboard has taken it.
 

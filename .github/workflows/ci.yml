@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push supersedes a PR run, but a deploy is never cut off halfway.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  TRUNK_VERSION: v0.21.14
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      # The default target is wasm32 (.cargo/config.toml), so this lints what ships.
+      - run: cargo clippy -- -D warnings
+      # Tests run on the host. `cargo t` names the Windows triple, so spell it out.
+      - run: cargo clippy --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
+      - run: cargo test --target x86_64-unknown-linux-gnu
+
+  build:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Trunk
+        run: |
+          base=https://github.com/trunk-rs/trunk/releases/download/$TRUNK_VERSION
+          file=trunk-x86_64-unknown-linux-gnu.tar.gz
+          curl -fsSLO "$base/$file" -O "$base/$file.sha256"
+          # the .sha256 file holds only the hash, so pair it with the name
+          echo "$(cat "$file.sha256")  $file" | sha256sum -c
+          tar -xzf "$file" -C ~/.cargo/bin
+      # Pages serves the site from /<repo>/, not the domain root.
+      - run: trunk build --release --public-url "/${{ github.event.repository.name }}/"
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

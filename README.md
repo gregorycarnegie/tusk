@@ -4,11 +4,14 @@
 [![Rust](https://img.shields.io/badge/rust-1.98%2B-orange.svg)](https://www.rust-lang.org)
 [![Leptos](https://img.shields.io/badge/leptos-0.8-ef3939.svg)](https://leptos.dev)
 [![Browser](https://img.shields.io/badge/browser-Chrome%20%7C%20Edge-4285f4.svg)](https://developer.mozilla.org/en-US/docs/Web/API/WebHID_API)
-[![Tests](https://img.shields.io/badge/tests-13%20passing-4ade80.svg)](#testing)
+[![CI](https://github.com/gregorycarnegie/tusk/actions/workflows/ci.yml/badge.svg)](https://github.com/gregorycarnegie/tusk/actions/workflows/ci.yml)
 
 Read tokens from a Paxton Net2 USB desktop reader in the browser, over WebHID.
 No drivers, no Net2 software, no server — put a card on the reader and the
 token number appears, as Net2 would show it.
+
+**Try it: <https://gregorycarnegie.github.io/tusk/>** — in Chrome or Edge,
+with the reader plugged in. Nothing to install.
 
 Mifare cards are tested. Paxton's own Hitag2 fobs are **beta**: decoded the
 way Net2 does, but not yet tried on a real fob, so check the number against
@@ -77,7 +80,7 @@ Full details — framing, checksum, the key, the address rules, the command map
 — are in [PROTOCOL.md](PROTOCOL.md). The command names and token number
 formulas come from Net2's own code.
 
-## Testing
+## Testing and deployment
 
 ```sh
 cargo t
@@ -92,6 +95,11 @@ USBPcap. Input we invented ourselves would only prove that the encoder and
 decoder share the same misunderstanding of the format — the exact failure mode
 worth guarding against when the format was reverse engineered rather than
 documented.
+
+[CI](.github/workflows/ci.yml) runs on every push and pull request: `cargo fmt
+--check`, clippy with warnings as errors on both the wasm target and the host,
+and the tests. Each push to `master` that passes is built with Trunk and
+published to GitHub Pages.
 
 ## Project layout
 
