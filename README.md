@@ -1,4 +1,4 @@
-# Paxton Net2 reader
+# Tusk
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.98%2B-orange.svg)](https://www.rust-lang.org)
@@ -12,7 +12,7 @@ token number appears.
 
 ```
 ┌──────────────────────────────────────┐
-│  Paxton Net2 reader                  │
+│  Tusk                                │
 │  [ Connect reader ]                  │
 │  Ready - present a token             │
 │ ┌──────────────────────────────────┐ │

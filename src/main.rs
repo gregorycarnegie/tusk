@@ -286,7 +286,7 @@ fn App() -> impl IntoView {
 
     view! {
         <main>
-            <h1>"Paxton Net2 reader"</h1>
+            <h1>"Tusk"</h1>
             <button on:click=connect>"Connect reader"</button>
             <p class="status">{status}</p>
             <div class="token" class:waiting=move || card.get().is_none()>

@@ -976,17 +976,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 
 [[package]]
-name = "paxton_reader"
-version = "0.1.0"
-dependencies = [
- "js-sys",
- "leptos",
- "proptest",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1712,6 +1701,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
 dependencies = [
  "winnow",
+]
+
+[[package]]
+name = "tusk"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "leptos",
+ "proptest",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

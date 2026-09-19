@@ -58,5 +58,5 @@ because each was a wrong assumption worth remembering:
   reports.
 - Tokens are assumed to be 4 to 8 bytes. Longer ones would be ignored.
 
-[Unreleased]: https://github.com/gregorycarnegie/paxton_reader/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/gregorycarnegie/paxton_reader/releases/tag/v0.1.0
+[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/gregorycarnegie/tusk/releases/tag/v0.1.0
