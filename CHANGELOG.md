@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-19
+
+Shows the token number Net2 uses, adds beta support for Paxton's Hitag2 fobs,
+and is now hosted on GitHub Pages with CI.
+
 ### Added
 
 - The Net2 token number, shown as Net2 shows it, with the raw hex beneath. For
@@ -21,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI: formatting, clippy on the wasm target and the host with
   warnings as errors, and the tests, on every push and pull request. Pushes
   to `master` that pass are deployed to Pages.
+- A redesign in Paxton-style colours (their green, charcoal and warm
+  off-white), with light and dark themes that follow the system and a toggle
+  that remembers the choice. The status line has a coloured dot for idle,
+  connecting, ready and problem states, and the header links to the source.
 - **Copy number** and **Copy hex** buttons, which say "Copied" once the
   clipboard has taken it.
 
@@ -100,5 +109,6 @@ because each was a wrong assumption worth remembering:
   reports.
 - Tokens are assumed to be 4 to 8 bytes. Longer ones would be ignored.
 
-[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/gregorycarnegie/tusk/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gregorycarnegie/tusk/releases/tag/v0.1.0
