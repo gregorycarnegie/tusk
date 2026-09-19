@@ -493,6 +493,31 @@ fn App() -> impl IntoView {
         })
     };
 
+    // what was last put on the clipboard, so the button that did it can say so
+    // until a different token turns up
+    let copied = RwSignal::new(String::new());
+    let copy_button = move |label: &'static str, pick: fn(&Token) -> String| {
+        let copy = move |_| {
+            let Some(text) = card.with_untracked(|c| c.as_ref().map(pick)) else {
+                return;
+            };
+            spawn_local(async move {
+                let clipboard = web_sys::window().unwrap().navigator().clipboard();
+                if clipboard.write_text(&text).await.is_ok() {
+                    copied.set(text);
+                }
+            });
+        };
+        view! {
+            <button class="copy" disabled=move || card.with(|c| c.is_none()) on:click=copy>
+                {move || match card.with(|c| c.as_ref().map(pick)) == Some(copied.get()) {
+                    true => "Copied",
+                    false => label,
+                }}
+            </button>
+        }
+    };
+
     view! {
         <main>
             <h1>"Tusk"</h1>
@@ -507,6 +532,10 @@ fn App() -> impl IntoView {
                         None => "Net2 token number".to_string(),
                     }}
                 </div>
+            </div>
+            <div class="actions">
+                {copy_button("Copy number", |t| t.number.to_string())}
+                {copy_button("Copy hex", |t| t.hex.clone())}
             </div>
         </main>
     }
