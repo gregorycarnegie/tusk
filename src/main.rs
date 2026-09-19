@@ -70,8 +70,13 @@ fn mask(addr: u8, body: &mut [u8]) {
     }
 }
 
+/// Longest payload that still leaves room for the checksum and the EOT byte.
+/// Reads and primes are far below this; it is here to document the ceiling.
+const MAX_PAYLOAD: usize = REPORT_BYTES - 6;
+
 /// Build a frame: STX, length, address, opcode, payload, checksum, EOT. The
 /// length counts STX through checksum, which is how the reader frames replies.
+/// Panics above MAX_PAYLOAD rather than silently truncating a command.
 fn frame(addr: u8, opcode: u8, data: &[u8]) -> [u8; REPORT_BYTES] {
     let len = 5 + data.len();
     let mut buf = [0u8; REPORT_BYTES];
@@ -126,27 +131,7 @@ fn token(reply: &Reply) -> Option<String> {
     }
 }
 
-/// A real token read captured from the Net2 software, at address 0xA5.
-#[cfg(debug_assertions)]
-const CAPTURED_READ: [u8; 37] = [
-    0x02, 0x25, 0xA5, 0x71, 0x35, 0x09, 0x05, 0x55, 0x65, 0x70, 0x68, 0x61, 0x6E, 0x74, 0x45,
-    0x6C, 0x65, 0x70, 0x68, 0x61, 0x6E, 0x74, 0x45, 0x6C, 0x65, 0x70, 0x68, 0x61, 0x6E, 0x74,
-    0x45, 0x6C, 0x65, 0x70, 0x68, 0x61, 0xF9,
-];
-
 fn main() {
-    // the obfuscated read must decode back to the token it really carried
-    debug_assert_eq!(
-        parse(&CAPTURED_READ).as_ref().and_then(token).as_deref(),
-        Some("5B7D4039")
-    );
-    // the prime we build must match, byte for byte, what Net2 sends
-    debug_assert_eq!(
-        hex(&frame(ADDR, OP_PRIME, &[PRIME_ARG])[..6]),
-        "0206886166A8"
-    );
-    // and the read must match the frame that returned a token on this machine
-    debug_assert_eq!(hex(&frame(ADDR, OP_READ, &[])[..5]), "02058892DE");
     leptos::mount::mount_to_body(App);
 }
 
@@ -308,5 +293,124 @@ fn App() -> impl IntoView {
                 {move || card.get().unwrap_or("--------".to_string())}
             </div>
         </main>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    // Frames captured from the real device with USBPcap while the Net2
+    // software drove it. Synthesised input would only prove our encoder and
+    // decoder share the same misunderstanding, so these are the tests that
+    // can actually tell us the model of the protocol is wrong.
+    const REAL_TOKEN_READ: [u8; 37] = [
+        0x02, 0x25, 0xA5, 0x71, 0x35, 0x09, 0x05, 0x55, 0x65, 0x70, 0x68, 0x61, 0x6E, 0x74,
+        0x45, 0x6C, 0x65, 0x70, 0x68, 0x61, 0x6E, 0x74, 0x45, 0x6C, 0x65, 0x70, 0x68, 0x61,
+        0x6E, 0x74, 0x45, 0x6C, 0x65, 0x70, 0x68, 0x61, 0xF9,
+    ];
+    const REAL_VERSION: [u8; 18] = [
+        0x02, 0x12, 0x88, 0x55, 0x39, 0x36, 0x32, 0x48, 0x31, 0x2B, 0x27, 0x65, 0x3A, 0x54,
+        0x5E, 0x59, 0x55, 0xA3,
+    ];
+    const REAL_PLAINTEXT_ACK: [u8; 6] = [0x02, 0x06, 0x00, 0x10, 0x00, 0xE7];
+    const REAL_NAK: [u8; 25] = [
+        0x02, 0x19, 0x88, 0x13, 0x02, 0x05, 0x88, 0x92, 0xDE, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4A,
+    ];
+
+    #[test]
+    fn decodes_the_token_from_a_real_read() {
+        let reply = parse(&REAL_TOKEN_READ).expect("a captured frame must parse");
+        assert_eq!(reply.msg_type, ACK);
+        assert_eq!(token(&reply).as_deref(), Some("5B7D4039"));
+    }
+
+    #[test]
+    fn decodes_a_real_version_string() {
+        let reply = parse(&REAL_VERSION).expect("a captured frame must parse");
+        assert_eq!(String::from_utf8_lossy(&reply.payload), "USB PES V1.14");
+    }
+
+    #[test]
+    fn reads_a_plaintext_reply_without_unmasking_it() {
+        // address 0 has the high bit clear, so this frame is not obfuscated
+        let reply = parse(&REAL_PLAINTEXT_ACK).expect("must parse");
+        assert_eq!(reply.msg_type, ACK);
+    }
+
+    #[test]
+    fn reads_a_nak_even_though_the_address_asks_for_obfuscation() {
+        // the reader sends NAKs in the clear regardless of address, which we
+        // got wrong at first and it showed up as a nonsense message type
+        let reply = parse(&REAL_NAK).expect("must parse");
+        assert_eq!(reply.msg_type, NAK);
+    }
+
+    #[test]
+    fn builds_the_two_frames_net2_sends_for_a_read() {
+        assert_eq!(hex(&frame(ADDR, OP_PRIME, &[PRIME_ARG])[..6]), "0206886166A8");
+        assert_eq!(hex(&frame(ADDR, OP_READ, &[])[..5]), "02058892DE");
+    }
+
+    #[test]
+    fn rejects_a_frame_whose_checksum_does_not_match() {
+        let mut corrupted = REAL_TOKEN_READ;
+        corrupted[6] ^= 0xFF;
+        assert!(parse(&corrupted).is_none());
+    }
+
+    #[test]
+    fn tells_a_read_reply_apart_from_the_prime_ack() {
+        // both are acks; only the long one carries a token, and mistaking the
+        // short one for a read used to wipe the display straight after a read
+        let read = parse(&REAL_TOKEN_READ).expect("must parse");
+        let prime_ack = parse(&frame(ADDR, ACK, &[0x00])).expect("must parse");
+        assert!(is_read_reply(&read));
+        assert!(!is_read_reply(&prime_ack));
+    }
+
+    #[test]
+    fn an_empty_read_means_no_card_rather_than_an_empty_token() {
+        let empty = parse(&frame(ADDR, ACK, &[0u8; 32])).expect("must parse");
+        assert!(is_read_reply(&empty));
+        assert_eq!(token(&empty), None);
+    }
+
+    /// Opcodes this app actually builds, plus the reply types the reader
+    /// sends back. Sweeping all 256 instead would fail, and fairly: a masked
+    /// opcode whose wire byte lands on 0x13 is indistinguishable from a
+    /// plaintext NAK. That is an ambiguity in the protocol rather than a bug
+    /// here, and it cannot bite, because no opcode in real traffic can
+    /// produce that byte under any of the eight key positions.
+    fn real_opcodes() -> impl Strategy<Value = u8> {
+        prop::sample::select(vec![ACK, NAK, 0x00, 0x14, 0x24, 0x25, 0x28, 0x64, OP_READ])
+    }
+
+    proptest! {
+        /// The obfuscation phase comes from the address, so a bug there would
+        /// only show up at some addresses. Sweeping them is exactly what a
+        /// property test is for.
+        #[test]
+        fn a_built_frame_parses_back_to_what_went_in(
+            addr: u8,
+            opcode in real_opcodes(),
+            payload in prop::collection::vec(any::<u8>(), 0..=MAX_PAYLOAD),
+        ) {
+            let reply = parse(&frame(addr, opcode, &payload)).expect("must parse");
+            prop_assert_eq!(reply.msg_type, opcode);
+            prop_assert_eq!(reply.payload, payload);
+        }
+
+        /// Masking is its own inverse, which is what lets one routine both
+        /// build and read frames.
+        #[test]
+        fn masking_twice_returns_the_original(addr: u8, body in prop::collection::vec(any::<u8>(), 0..40)) {
+            let mut scrambled = body.clone();
+            mask(addr, &mut scrambled);
+            mask(addr, &mut scrambled);
+            prop_assert_eq!(scrambled, body);
+        }
     }
 }

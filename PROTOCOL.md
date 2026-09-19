@@ -43,8 +43,14 @@ Zero payload bytes XOR to the key itself, which is why "Elephant" appears as
 readable text in raw frames.
 
 One exception: a NAK is returned unobfuscated even when the address asks for
-obfuscation. No masked reply can be mistaken for one, so read opcode 0x13
-straight off the wire before unmasking.
+obfuscation, so read opcode 0x13 straight off the wire before unmasking.
+
+That makes the encoding ambiguous in principle: an opcode that masks to the
+wire byte 0x13 would be read back as a plaintext NAK. It cannot happen in
+practice, because reaching 0x13 needs a key byte equal to `opcode XOR 0x13`,
+and no opcode in real traffic - neither the commands sent nor the reply types
+0x10, 0x12 and 0x13 - produces one of the eight bytes of the key. A property
+test found this, so it is written down rather than left as a surprise.
 
 ## Reply types
 

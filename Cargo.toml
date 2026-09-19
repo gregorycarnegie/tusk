@@ -21,3 +21,7 @@ web-sys = { version = "0.3", features = [
     "Navigator",
     "Window",
 ] }
+
+[dev-dependencies]
+# round-trip property testing for the frame codec
+proptest = "1"

@@ -1,3 +1,8 @@
 [build]
 target = "wasm32-unknown-unknown"
 rustflags = ["--cfg=web_sys_unstable_apis"]
+
+# build.target above points at wasm32, which has no test runner, so plain
+# "cargo test" would build tests it cannot execute. This runs them on the host.
+[alias]
+t = "test --target x86_64-pc-windows-msvc"
