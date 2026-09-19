@@ -18,16 +18,17 @@ way Net2 does, but not yet tried on a real fob, so check the number against
 Net2 before relying on it.
 
 ```
-┌──────────────────────────────────────┐
-│  Tusk                                │
-│  [ Connect reader ]                  │
-│  Ready - present a token             │
-│ ┌──────────────────────────────────┐ │
-│ │           34935097               │ │
-│ │         Mifare 5B7D4039          │ │
-│ └──────────────────────────────────┘ │
-└──────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│ ● Ready - present a token  (Connect)     │
+├──────────────────────────────────────────┤
+│            NET2 TOKEN NUMBER             │
+│                34935097                  │
+│            Mifare  5B7D4039              │
+│      [Copy number]  [Copy hex]           │
+└──────────────────────────────────────────┘
 ```
+
+Light and dark themes follow the system setting, with a toggle in the header.
 
 The reader speaks an undocumented, lightly obfuscated HID protocol. Working it
 out was most of this project; [PROTOCOL.md](PROTOCOL.md) is the write-up.
