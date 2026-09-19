@@ -106,7 +106,10 @@ published to GitHub Pages.
 
 | Path | What it is |
 |---|---|
-| `src/main.rs` | The whole app: protocol, polling, UI |
+| `src/protocol.rs` | Building command frames and parsing replies |
+| `src/token.rs` | Turning a read reply into the Net2 token number |
+| `src/reader.rs` | WebHID connection and the polling loop |
+| `src/app.rs` | The page itself |
 | `PROTOCOL.md` | The reverse-engineered protocol |
 | `index.html` | Page shell and styling |
 | `.cargo/config.toml` | wasm target, unstable WebHID bindings, test alias |
