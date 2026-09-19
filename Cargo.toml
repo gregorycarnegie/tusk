@@ -2,6 +2,9 @@
 name = "paxton_reader"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+description = "Read Paxton Net2 tokens in the browser over WebHID"
+repository = "https://github.com/gregorycarnegie/paxton_reader"
 
 [dependencies]
 leptos = { version = "0.8", features = ["csr"] }
