@@ -29,14 +29,38 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
-      # The default target is wasm32 (.cargo/config.toml), so this lints what ships.
-      - run: cargo clippy -- -D warnings
+      # The default target is wasm32 (.cargo/config.toml), so this lints what
+      # ships, and the browser tests with it.
+      - run: cargo clippy --all-targets -- -D warnings
       # Tests run on the host. `cargo t` names the Windows triple, so spell it out.
       - run: cargo clippy --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
       - run: cargo test --target x86_64-unknown-linux-gnu
 
+  # The polling loop in src/reader.rs, against a fake reader in headless Chrome.
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      # wasm-bindgen-test-runner must match wasm-bindgen in Cargo.lock exactly
+      - id: wasm-bindgen
+        run: |
+          version=$(cargo metadata --format-version 1 --locked |
+            jq -r '.packages[] | select(.name == "wasm-bindgen") | .version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
+      # The image has Chrome with a matching driver, and geckodriver, which the
+      # runner would pick first from PATH. The fake reader needs no WebHID, but
+      # Chrome is what the app targets.
+      - run: CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" cargo test
+
   build:
-    needs: check
+    needs: [check, browser]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

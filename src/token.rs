@@ -140,10 +140,10 @@ fn net2_number(bits: u64, len: usize) -> Option<u32> {
     padded[padded.len() - 8..].parse().ok()
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use crate::protocol::tests::REAL_TOKEN_READ;
+    use crate::protocol::captured::REAL_TOKEN_READ;
     use crate::protocol::{ACK, ADDR, INIT, frame, parse};
 
     #[test]

@@ -84,12 +84,13 @@ formulas come from Net2's own code.
 ## Testing and deployment
 
 ```sh
-cargo t
+cargo t      # protocol and token decoding, on the host
+cargo test   # the polling loop, in headless Chrome against a fake reader
 ```
 
-`cargo t` is an alias for `cargo test --target x86_64-pc-windows-msvc`. The
-plain command would build for wasm32, which has no test runner. See
-[.cargo/config.toml](.cargo/config.toml).
+`cargo t` is an alias for `cargo test --target x86_64-pc-windows-msvc`. Plain
+`cargo test` builds for wasm32 and runs in the browser; see
+[CONTRIBUTING.md](CONTRIBUTING.md) for what it needs.
 
 The tests that matter are pinned to frames captured from the real device with
 USBPcap. Input we invented ourselves would only prove that the encoder and
@@ -99,7 +100,7 @@ documented.
 
 [CI](.github/workflows/ci.yml) runs on every push and pull request: `cargo fmt
 --check`, clippy with warnings as errors on both the wasm target and the host,
-and the tests. Each push to `master` that passes is built with Trunk and
+and both sets of tests. Each push to `master` that passes is built with Trunk and
 published to GitHub Pages.
 
 ## Project layout

@@ -30,6 +30,13 @@ web-sys = { version = "0.3", features = [
     "Window",
 ] }
 
-[dev-dependencies]
+# Host tests: `cargo t`. proptest does not build for wasm32.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 # round-trip property testing for the frame codec
 proptest = "1"
+
+# Browser tests: plain `cargo test`, run in headless Chrome by
+# wasm-bindgen-test-runner (.cargo/config.toml), against a fake reader.
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
+wasm-bindgen-futures = "0.4"

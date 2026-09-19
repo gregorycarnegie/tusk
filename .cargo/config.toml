@@ -2,7 +2,12 @@
 target = "wasm32-unknown-unknown"
 rustflags = ["--cfg=web_sys_unstable_apis"]
 
-# build.target above points at wasm32, which has no test runner, so plain
-# "cargo test" would build tests it cannot execute. This runs them on the host.
+# Plain "cargo test" builds for wasm32 and runs the browser tests in
+# src/reader.rs headlessly. wasm-bindgen-test-runner must be the same version
+# as wasm-bindgen in Cargo.lock: cargo install wasm-bindgen-cli --version <it>
+[target.wasm32-unknown-unknown]
+runner = "wasm-bindgen-test-runner"
+
+# The host tests: the protocol and token decoding, with proptest.
 [alias]
 t = "test --target x86_64-pc-windows-msvc"

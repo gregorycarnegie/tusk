@@ -6,9 +6,13 @@
 additional_cargo_args = ["--target", "x86_64-pc-windows-msvc"]
 
 exclude_globs = [
-    # WebHID and DOM glue: every line needs a browser and a plugged-in reader,
-    # so no host test can reach it and all its mutants survive.
+    # Only the browser tests reach this, and this config runs the host ones.
+    # Measure it on its own, in headless Chrome, with every mutant in tests::
+    # left out (September 2026: 21 caught, 3 unviable, 1 timeout):
+    #   cargo mutants --no-config --file reader.rs --exclude-re tests:: -j2
+    # The timeout is `sleep` -> (), which spins the polling loop forever.
     "src/reader.rs",
+    # DOM glue with no tests of its own.
     "src/app.rs",
     "src/main.rs",
 ]

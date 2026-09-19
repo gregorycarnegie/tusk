@@ -17,16 +17,27 @@ no WebHID, so the page will tell you it cannot work there.
 ## Running the tests
 
 ```sh
-cargo t
+cargo t      # protocol and token decoding, on the host
+cargo test   # the polling loop, in headless Chrome
 ```
 
-That is an alias for `cargo test --target x86_64-pc-windows-msvc`, because
-`.cargo/config.toml` sets the default target to wasm32, which has no test
-runner. On a non-Windows host, change the triple in the alias.
+`cargo t` is an alias for `cargo test --target x86_64-pc-windows-msvc`. On a
+non-Windows host, change the triple in the alias.
 
-The protocol code is pure and fully testable without hardware. The WebHID
-plumbing is not tested, by choice — mocking it would mostly assert that the
-mock behaves like the mock.
+Plain `cargo test` builds for wasm32 and runs the tests in `src/reader.rs`
+with `wasm-bindgen-test-runner`. It needs Chrome, a matching `chromedriver`,
+and `wasm-bindgen-cli` at exactly the `wasm-bindgen` version in `Cargo.lock`:
+
+```sh
+cargo install wasm-bindgen-cli --version <the version in Cargo.lock>
+```
+
+Those tests drive the real polling loop against a fake reader — a plain JS
+object standing in for the `HIDDevice`. The fake answers from our model of the
+reader, so it cannot tell us that model is wrong; that is what the captured
+frames in the host tests are for. What it does prove is the loop's own logic:
+when the card is shown and cleared, when the reader counts as gone, and that
+two connections never fight over it.
 
 ## Testing against the hardware
 

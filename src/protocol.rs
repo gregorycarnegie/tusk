@@ -115,11 +115,11 @@ pub fn is_read_reply(reply: &Reply) -> bool {
     reply.msg_type == ACK && reply.payload.len() >= 16
 }
 
+/// Frames captured from the real device, shared by the host and browser tests.
 #[cfg(test)]
-pub mod tests {
-    use super::*;
-    use proptest::prelude::*;
-
+// the browser tests only need the token read
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+pub mod captured {
     // Frames captured from the real device with USBPcap while the Net2
     // software drove it. Synthesised input would only prove our encoder and
     // decoder share the same misunderstanding, so these are the tests that
@@ -129,15 +129,22 @@ pub mod tests {
         0x6C, 0x65, 0x70, 0x68, 0x61, 0x6E, 0x74, 0x45, 0x6C, 0x65, 0x70, 0x68, 0x61, 0x6E, 0x74,
         0x45, 0x6C, 0x65, 0x70, 0x68, 0x61, 0xF9,
     ];
-    const REAL_VERSION: [u8; 18] = [
+    pub const REAL_VERSION: [u8; 18] = [
         0x02, 0x12, 0x88, 0x55, 0x39, 0x36, 0x32, 0x48, 0x31, 0x2B, 0x27, 0x65, 0x3A, 0x54, 0x5E,
         0x59, 0x55, 0xA3,
     ];
-    const REAL_PLAINTEXT_ACK: [u8; 6] = [0x02, 0x06, 0x00, 0x10, 0x00, 0xE7];
-    const REAL_NAK: [u8; 25] = [
+    pub const REAL_PLAINTEXT_ACK: [u8; 6] = [0x02, 0x06, 0x00, 0x10, 0x00, 0xE7];
+    pub const REAL_NAK: [u8; 25] = [
         0x02, 0x19, 0x88, 0x13, 0x02, 0x05, 0x88, 0x92, 0xDE, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4A,
     ];
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::captured::*;
+    use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn decodes_a_real_version_string() {
