@@ -14,22 +14,37 @@ trunk serve --port 8080
 Then open <http://127.0.0.1:8080> in Chrome or Edge. Firefox and Safari have
 no WebHID, so the page will tell you it cannot work there.
 
+On Linux, install the udev rule in the [README](README.md#requirements) before
+believing the reader is broken. Without it `/dev/hidrawN` is root-only and
+Chrome cannot open the device, which looks exactly like a reader that will not
+answer. Windows has no equivalent gate, so a build that works there can still
+fail here for reasons that have nothing to do with the code.
+
 ## Running the tests
 
 ```sh
-cargo t      # protocol and token decoding, on the host
-cargo test   # the polling loop, in headless Chrome
+cargo test   # protocol and token decoding, on the host
+cargo w      # the polling loop, in headless Chrome
 ```
 
-`cargo t` is an alias for `cargo test --target x86_64-pc-windows-msvc`. On a
-non-Windows host, change the triple in the alias.
-
-Plain `cargo test` builds for wasm32 and runs the tests in `src/reader.rs`
-with `wasm-bindgen-test-runner`. It needs Chrome, a matching `chromedriver`,
-and `wasm-bindgen-cli` at exactly the `wasm-bindgen` version in `Cargo.lock`:
+The host is the default target, so `cargo test` needs no triple and works
+wherever you are. `cargo w` is an alias for
+`cargo test --target wasm32-unknown-unknown`, which runs the tests in
+`src/reader.rs` with `wasm-bindgen-test-runner`. It needs Chrome, a matching
+`chromedriver`, and `wasm-bindgen-cli` at exactly the `wasm-bindgen` version
+in `Cargo.lock`:
 
 ```sh
 cargo install wasm-bindgen-cli --version <the version in Cargo.lock>
+```
+
+Get `chromedriver` from [Chrome for
+Testing](https://googlechromelabs.github.io/chrome-for-testing/) at your
+Chrome's version. If `geckodriver` is also on your `PATH` the runner may pick
+it, and Firefox has no WebHID, so name the one you want:
+
+```sh
+CHROMEDRIVER=$(command -v chromedriver) cargo w
 ```
 
 Those tests drive the real polling loop against a fake reader — a plain JS

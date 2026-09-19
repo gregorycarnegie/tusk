@@ -29,12 +29,11 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
-      # The default target is wasm32 (.cargo/config.toml), so this lints what
-      # ships, and the browser tests with it.
+      # The host is the default target (.cargo/config.toml), so this lints the
+      # host tests, and name wasm32 to lint what actually ships.
       - run: cargo clippy --all-targets -- -D warnings
-      # Tests run on the host. `cargo t` names the Windows triple, so spell it out.
-      - run: cargo clippy --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
-      - run: cargo test --target x86_64-unknown-linux-gnu
+      - run: cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings
+      - run: cargo test
 
   # The polling loop in src/reader.rs, against a fake reader in headless Chrome.
   browser:
@@ -57,7 +56,7 @@ jobs:
       # The image has Chrome with a matching driver, and geckodriver, which the
       # runner would pick first from PATH. The fake reader needs no WebHID, but
       # Chrome is what the app targets.
-      - run: CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" cargo test
+      - run: CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" cargo w
 
   build:
     needs: [check, browser]

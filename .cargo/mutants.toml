@@ -1,15 +1,14 @@
 # cargo-mutants configuration.
-
-# build.target in config.toml is wasm32, which has no test runner, so every
-# test binary would be built for a target that cannot execute it. Same host
-# triple as the `t` alias.
-additional_cargo_args = ["--target", "x86_64-pc-windows-msvc"]
+#
+# The host is the default target (.cargo/config.toml), which is what these
+# tests need, so there is no triple to name here.
 
 exclude_globs = [
     # Only the browser tests reach this, and this config runs the host ones.
     # Measure it on its own, in headless Chrome, with every mutant in tests::
     # left out (September 2026: 21 caught, 3 unviable, 1 timeout):
-    #   cargo mutants --no-config --file reader.rs --exclude-re tests:: -j2
+    #   cargo mutants --no-config --file reader.rs --exclude-re tests:: -j2 \
+    #     -- --target wasm32-unknown-unknown
     # The timeout is `sleep` -> (), which spins the polling loop forever.
     "src/reader.rs",
     # DOM glue with no tests of its own.

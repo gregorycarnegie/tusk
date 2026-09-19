@@ -38,6 +38,20 @@ out was most of this project; [PROTOCOL.md](PROTOCOL.md) is the write-up.
 - **Chrome or Edge.** WebHID is not available in Firefox or Safari, and the
   page says so rather than failing silently.
 - **A Paxton Net2 USB desktop reader** (`USB\VID_1071&PID_0001`).
+- **On Linux, a udev rule.** Chrome reaches the reader through
+  `/dev/hidrawN`, which is root-only by default, so the device either never
+  appears in the chooser or fails to open. Windows needs nothing here; Linux
+  needs this once:
+
+  ```sh
+  sudo tee /etc/udev/rules.d/70-paxton-net2.rules <<'EOF'
+  SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1071", ATTRS{idProduct}=="0001", TAG+="uaccess"
+  EOF
+  sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=hidraw
+  ```
+
+  `uaccess` grants an ACL to whoever is logged in at the active seat, the same
+  mechanism udev uses for webcams.
 - **Rust** with the `wasm32-unknown-unknown` target, and
   [Trunk](https://trunkrs.dev).
 
@@ -84,13 +98,13 @@ formulas come from Net2's own code.
 ## Testing and deployment
 
 ```sh
-cargo t      # protocol and token decoding, on the host
-cargo test   # the polling loop, in headless Chrome against a fake reader
+cargo test   # protocol and token decoding, on the host
+cargo w      # the polling loop, in headless Chrome against a fake reader
 ```
 
-`cargo t` is an alias for `cargo test --target x86_64-pc-windows-msvc`. Plain
-`cargo test` builds for wasm32 and runs in the browser; see
-[CONTRIBUTING.md](CONTRIBUTING.md) for what it needs.
+`cargo w` is an alias for `cargo test --target wasm32-unknown-unknown`; see
+[CONTRIBUTING.md](CONTRIBUTING.md) for what it needs. The host is the default
+target, so `cargo test` works on any machine without naming a triple.
 
 The tests that matter are pinned to frames captured from the real device with
 USBPcap. Input we invented ourselves would only prove that the encoder and
@@ -113,7 +127,7 @@ published to GitHub Pages.
 | `src/app.rs` | The page itself |
 | `PROTOCOL.md` | The reverse-engineered protocol |
 | `index.html` | Page shell and styling |
-| `.cargo/config.toml` | wasm target, unstable WebHID bindings, test alias |
+| `.cargo/config.toml` | Unstable WebHID bindings, browser-test alias |
 
 ## Licence
 

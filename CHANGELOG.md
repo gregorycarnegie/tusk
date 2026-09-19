@@ -10,7 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Tests for the polling loop, run in headless Chrome against a fake reader
-  (`cargo test`), and mutation testing with cargo-mutants.
+  (`cargo w`), and mutation testing with cargo-mutants.
+- Linux setup instructions. Chrome reaches the reader through `/dev/hidrawN`,
+  which is root-only by default, so without a udev rule the device never
+  opens and the reader looks broken. Windows needs no equivalent.
+
+### Changed
+
+- The host is now the default build target, and wasm32 is named where it is
+  wanted. `cargo test` runs the host tests on any machine; `cargo w` runs the
+  browser ones. The old `cargo t` alias hardcoded the Windows triple and
+  could not build anywhere else.
 
 ### Fixed
 

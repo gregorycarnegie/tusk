@@ -1,13 +1,18 @@
+# wasm32 is what ships, but it is deliberately not the default target: a
+# default no host can execute forces every test command to name a triple, and
+# a hardcoded triple is only ever right on one developer's machine. So the
+# host stays the default, and wasm32 is named where it is actually wanted --
+# trunk passes it itself, and the browser tests have the `w` alias below.
 [build]
-target = "wasm32-unknown-unknown"
 rustflags = ["--cfg=web_sys_unstable_apis"]
 
-# Plain "cargo test" builds for wasm32 and runs the browser tests in
-# src/reader.rs headlessly. wasm-bindgen-test-runner must be the same version
-# as wasm-bindgen in Cargo.lock: cargo install wasm-bindgen-cli --version <it>
+# wasm-bindgen-test-runner must be the same version as wasm-bindgen in
+# Cargo.lock: cargo install wasm-bindgen-cli --version <it>
 [target.wasm32-unknown-unknown]
 runner = "wasm-bindgen-test-runner"
 
-# The host tests: the protocol and token decoding, with proptest.
 [alias]
-t = "test --target x86_64-pc-windows-msvc"
+# The browser tests: the polling loop in src/reader.rs, run in headless
+# Chrome against a fake reader. Plain `cargo test` runs the host ones -- the
+# protocol and token decoding, with proptest.
+w = "test --target wasm32-unknown-unknown"
