@@ -1,0 +1,25 @@
+# cargo-mutants configuration.
+
+# build.target in config.toml is wasm32, which has no test runner, so every
+# test binary would be built for a target that cannot execute it. Same host
+# triple as the `t` alias.
+additional_cargo_args = ["--target", "x86_64-pc-windows-msvc"]
+
+exclude_globs = [
+    # WebHID and DOM glue: every line needs a browser and a plugged-in reader,
+    # so no host test can reach it and all its mutants survive.
+    "src/reader.rs",
+    "src/app.rs",
+    "src/main.rs",
+]
+
+# Known equivalent survivors (September 2026, 116 caught / 5 missed / 1 timeout).
+# Left in the run rather than excluded, since line numbers move:
+#   frame     mask(.., buf[3..len - 1]) -> len / 1: the extra byte masked is
+#             the checksum slot, which the next line overwrites
+#   frame     checksum(&buf[..len - 1]) -> len + 1 / len / 1: the extra bytes
+#             summed are always still zero
+#   hitag2_number  page4 << 32 | page5 -> ^: the halves share no bits
+#   net2_number    i < len - 5 -> <=: i steps 0..25 then 32, 37, ... and never
+#                  lands on 59 or 40
+# The timeout (digits.len() == 6 -> !=) loops forever, so it is detected.

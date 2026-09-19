@@ -144,7 +144,7 @@ fn net2_number(bits: u64, len: usize) -> Option<u32> {
 mod tests {
     use super::*;
     use crate::protocol::tests::REAL_TOKEN_READ;
-    use crate::protocol::{ACK, ADDR, frame, parse};
+    use crate::protocol::{ACK, ADDR, INIT, frame, parse};
 
     #[test]
     fn decodes_the_token_from_a_real_read() {
@@ -183,6 +183,111 @@ mod tests {
             token(Read::Mifare, &reply).expect("a card").hex,
             "045B7D40391200"
         );
+    }
+
+    #[test]
+    fn keeps_a_seven_byte_uid_whole_when_it_ends_in_two_zeros() {
+        let mut payload = [0u8; 32];
+        payload[..5].copy_from_slice(&[0x04, 0x5B, 0x7D, 0x40, 0x39]);
+        let reply = parse(&frame(ADDR, ACK, &payload)).expect("must parse");
+        assert_eq!(
+            token(Read::Mifare, &reply).expect("a card").hex,
+            "045B7D40390000"
+        );
+    }
+
+    #[test]
+    fn asks_with_the_opcodes_net2_uses() {
+        // the Mifare read as captured from Net2, and the read in its handshake
+        assert_eq!(
+            hex(&frame(ADDR, Read::Mifare.opcode(), &[])[..5]),
+            "02058892DE"
+        );
+        assert_eq!(Read::Hitag2.opcode(), INIT[1].1);
+    }
+
+    /// Pages 2 to 7 as TOKEN_R_DATA returns them, four bytes each.
+    fn pages(p: [u32; 6]) -> Vec<u8> {
+        p.iter().flat_map(|x| x.to_be_bytes()).collect()
+    }
+
+    /// Put each digit's code at a (page, bit offset) of the newer layout.
+    fn place(p: &mut [u32; 6], at: &[(usize, usize)], digits: &[usize]) {
+        for (&(page, off), &d) in at.iter().zip(digits) {
+            p[page - 2] |= u32::from(DIGIT_CODES[d]) << (27 - off);
+        }
+    }
+
+    /// Raw 5-bit codes in the classic layout: six from the top of page 4,
+    /// the rest from the top of page 5. A 0 here is the magstripe padding.
+    fn net2_bits(codes: &[u8]) -> u64 {
+        let starts = (0..6).map(|n| 5 * n).chain((0..).map(|n| 32 + 5 * n));
+        codes
+            .iter()
+            .zip(starts)
+            .fold(0, |bits, (c, at)| bits | u64::from(*c) << (59 - at))
+    }
+
+    fn codes(digits: &[usize]) -> Vec<u8> {
+        digits.iter().map(|d| DIGIT_CODES[*d]).collect()
+    }
+
+    #[test]
+    fn decodes_a_hitag2_user_card_in_the_newer_layout() {
+        // Synthetic, like the classic-layout test: proves the transcription.
+        let mut p = [0u32; 6];
+        p[5] |= 0b0001 << 2;
+        place(&mut p, &CARD_TYPE_DIGITS, &[0, 0, 1]);
+        place(&mut p, &USER_CARD_DIGITS, &[8, 7, 6, 5, 4, 3, 2, 9]);
+        assert_eq!(hitag2_number(&pages(p)), Some(87654329));
+    }
+
+    #[test]
+    fn decodes_the_45_bit_layout_when_the_card_type_is_not_a_user_card() {
+        let bits = net2_bits(&codes(&[1, 2, 3, 4, 5, 6, 7, 8]));
+        let mut p = [0, 0, (bits >> 32) as u32, bits as u32, 0, 0b0001 << 2];
+        place(&mut p, &CARD_TYPE_DIGITS, &[0, 0, 2]);
+        assert_eq!(hitag2_number(&pages(p)), Some(12345678));
+    }
+
+    #[test]
+    fn a_number_can_end_in_zero_padding() {
+        assert_eq!(net2_number(net2_bits(&codes(&[1, 2])), 64), Some(12));
+    }
+
+    #[test]
+    fn rejects_anything_after_the_zero_padding() {
+        let mut junk = codes(&[1, 2]);
+        junk.extend([0, DIGIT_CODES[2]]);
+        assert_eq!(net2_number(net2_bits(&junk), 64), None);
+    }
+
+    #[test]
+    fn ignores_bits_past_the_45_bit_length() {
+        let bits = net2_bits(&codes(&[1, 2])) | 1 << (63 - 50);
+        assert_eq!(net2_number(bits, 45), Some(12));
+        // the same bit inside a 64-bit number is junk after the padding
+        assert_eq!(net2_number(bits, 64), None);
+    }
+
+    #[test]
+    fn stops_reading_digits_at_the_45_bit_length() {
+        // a ninth digit sits just past the end and must not shift the number
+        let bits = net2_bits(&codes(&[1, 2, 3, 4, 5, 6, 7, 8, 9]));
+        assert_eq!(net2_number(bits, 45), Some(12345678));
+    }
+
+    #[test]
+    fn reads_leading_zero_padding_as_zeros() {
+        let mut padded = vec![0, 0];
+        padded.extend(codes(&[1, 2, 3, 4, 15]));
+        assert_eq!(net2_number(net2_bits(&padded), 64), Some(1234));
+    }
+
+    #[test]
+    fn keeps_the_last_eight_digits_of_a_longer_number() {
+        let bits = net2_bits(&codes(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 1, 2, 3]));
+        assert_eq!(net2_number(bits, 64), Some(56789123));
     }
 
     #[test]

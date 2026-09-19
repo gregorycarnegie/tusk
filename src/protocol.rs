@@ -167,6 +167,27 @@ pub mod tests {
     }
 
     #[test]
+    fn pads_with_zeros_and_ends_with_eot() {
+        // the padding after the checksum is sent unmasked, as Net2 sends it
+        let built = frame(ADDR, OP_LEDS, &[LEDS_ARG]);
+        assert!(built[6..40].iter().all(|b| *b == 0), "{}", hex(&built));
+        assert_eq!(built[40], 0x04);
+    }
+
+    #[test]
+    fn rejects_a_frame_without_the_start_byte() {
+        // a valid checksum, so only the missing STX can reject it
+        let mut bytes = [0x03, 0x06, 0x00, ACK, 0x00, 0x00];
+        bytes[5] = checksum(&bytes[..5]);
+        assert!(parse(&bytes).is_none());
+    }
+
+    #[test]
+    fn rejects_a_frame_shorter_than_its_length_byte() {
+        assert!(parse(&REAL_PLAINTEXT_ACK[..5]).is_none());
+    }
+
+    #[test]
     #[should_panic(expected = "does not fit")]
     fn refuses_a_payload_that_would_overwrite_the_checksum() {
         frame(ADDR, ACK, &[0; MAX_PAYLOAD + 1]);
