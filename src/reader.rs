@@ -1,14 +1,13 @@
 //! Talking to the reader over WebHID and keeping the page's state in step.
 
-use leptos::prelude::*;
-use leptos::reactive::owner::StoredValue;
+use leptos::{prelude::*, reactive::owner::StoredValue};
 use wasm_bindgen::prelude::*;
 use web_sys::{HidDevice, HidInputReportEvent};
 
-use crate::protocol::{
-    ACK, ADDR, INIT, LEDS_ARG, OP_LEDS, REPORT_BYTES, frame, is_read_reply, parse,
+use crate::{
+    protocol::{ACK, ADDR, INIT, LEDS_ARG, OP_LEDS, REPORT_BYTES, frame, is_read_reply, parse},
+    token::{Read, Token, token},
 };
-use crate::token::{Read, Token, token};
 
 /// Paxton Net2 desktop reader: USB\VID_1071&PID_0001, HID vendor-defined.
 pub const PAXTON_VID: u32 = 0x1071;
@@ -38,6 +37,14 @@ pub type Status = RwSignal<(Tone, String)>;
 
 pub fn say(status: Status, tone: Tone, message: impl Into<String>) {
     status.set((tone, message.into()));
+}
+
+/// The browser's own message for a failed WebHID call. `{:?}` on the JsValue
+/// wraps it in `JsValue(...)` and repeats it as the stack's first line.
+pub fn reason(e: &JsValue) -> String {
+    e.dyn_ref::<js_sys::Error>()
+        .map(|e| String::from(e.message()))
+        .unwrap_or_else(|| format!("{e:?}"))
 }
 
 pub fn hid() -> web_sys::Hid {
@@ -135,7 +142,7 @@ pub async fn run(
         say(
             status,
             Tone::Problem,
-            format!("Could not open the reader: {e:?}"),
+            format!("Could not open the reader: {}", reason(&e)),
         );
         return;
     }
@@ -182,7 +189,11 @@ pub async fn run(
                 say(
                     status,
                     Tone::Problem,
-                    format!("Reader would not start: {e:?}"),
+                    // a reader left in a bad state only recovers from a cold start
+                    format!(
+                        "Reader would not start ({}) - unplug it, plug it back in, then click Connect reader",
+                        reason(&e)
+                    ),
                 );
             }
             return;
@@ -224,15 +235,13 @@ pub async fn run(
 /// the polling logic, not the protocol - that is what the host tests are for.
 #[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
-    use std::cell::Cell;
-    use std::rc::Rc;
+    use std::{cell::Cell, rc::Rc};
 
     use wasm_bindgen_futures::spawn_local;
     use wasm_bindgen_test::*;
 
     use super::*;
-    use crate::protocol::captured::REAL_TOKEN_READ;
-    use crate::protocol::{OP_READ_HITAG2, OP_READ_MIFARE};
+    use crate::protocol::{OP_READ_HITAG2, OP_READ_MIFARE, REAL_TOKEN_READ};
 
     wasm_bindgen_test_configure!(run_in_browser);
 
@@ -525,7 +534,12 @@ mod tests {
         let failed = Fake::new(0);
         failed.unplug(false);
         page.connect(&failed);
-        assert!(until(200, || page.message().starts_with("Reader would not start")).await);
+        assert!(
+            until(200, || page
+                .message()
+                .starts_with("Reader would not start (unplugged)"))
+            .await
+        );
         let new = Fake::new(0);
         new.card.set(true);
         page.connect(&new);

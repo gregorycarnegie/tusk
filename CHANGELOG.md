@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Tests for the polling loop, run in headless Chrome against a fake reader
+  (`cargo test`), and mutation testing with cargo-mutants.
+
+### Fixed
+
+- Error messages show the browser's own text once, instead of a debug print
+  that repeated it. A reader that will not start now says to unplug it and
+  plug it back in.
+
 ## [0.2.1] - 2026-09-19
 
 ### Changed

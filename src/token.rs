@@ -143,8 +143,7 @@ fn net2_number(bits: u64, len: usize) -> Option<u32> {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use crate::protocol::captured::REAL_TOKEN_READ;
-    use crate::protocol::{ACK, ADDR, INIT, frame, parse};
+    use crate::protocol::{ACK, ADDR, INIT, REAL_TOKEN_READ, frame, parse};
 
     #[test]
     fn decodes_the_token_from_a_real_read() {

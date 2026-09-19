@@ -1,12 +1,12 @@
 //! The page: status, the token on the reader, and the buttons around it.
 
-use leptos::prelude::*;
-use leptos::reactive::owner::StoredValue;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, reactive::owner::StoredValue, task::spawn_local};
 use web_sys::{HidDeviceFilter, HidDeviceRequestOptions};
 
-use crate::reader::{Link, PAXTON_VID, Tone, hid, run, say};
-use crate::token::{Read, Token};
+use crate::{
+    reader::{Link, PAXTON_VID, Tone, hid, reason, run, say},
+    token::{Read, Token},
+};
 
 const REPO_URL: &str = "https://github.com/gregorycarnegie/tusk";
 
@@ -63,7 +63,7 @@ pub fn App() -> impl IntoView {
                 Err(e) => say(
                     status,
                     Tone::Problem,
-                    format!("Could not reach the reader: {e:?}"),
+                    format!("Could not reach the reader: {}", reason(&e)),
                 ),
             }
         })
