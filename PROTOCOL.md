@@ -11,8 +11,14 @@ asserts the key parts against captured bytes at startup.
     one 41-byte input report, one 41-byte output report, report id 0
 
 Claimable from a browser with WebHID: the collection is vendor-defined, so
-Chrome does not treat it as a protected device. The reader reports a malformed
-USB product string, so it appears as mojibake in the device picker.
+Chrome does not treat it as a protected device.
+
+The reader answers the USB product string request with a buffer it never
+fills, so the name is uninitialised memory - different garbage on every
+enumeration, not a fixed encoding bug. It shows up as mojibake in the device
+picker and there is nothing a page can do about it. Filtering on the vendor id
+at least leaves it as the only entry in the list. Tested working on every port
+tried, including a monitor hub.
 
 ## Frame format
 
