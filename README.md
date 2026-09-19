@@ -4,11 +4,15 @@
 [![Rust](https://img.shields.io/badge/rust-1.98%2B-orange.svg)](https://www.rust-lang.org)
 [![Leptos](https://img.shields.io/badge/leptos-0.8-ef3939.svg)](https://leptos.dev)
 [![Browser](https://img.shields.io/badge/browser-Chrome%20%7C%20Edge-4285f4.svg)](https://developer.mozilla.org/en-US/docs/Web/API/WebHID_API)
-[![Tests](https://img.shields.io/badge/tests-10%20passing-4ade80.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-11%20passing-4ade80.svg)](#testing)
 
 Read tokens from a Paxton Net2 USB desktop reader in the browser, over WebHID.
 No drivers, no Net2 software, no server — put a card on the reader and the
-token number appears.
+token number appears, as Net2 would show it.
+
+Mifare cards are tested. Paxton's own Hitag2 fobs are **beta**: decoded the
+way Net2 does, but not yet tried on a real fob, so check the number against
+Net2 before relying on it.
 
 ```
 ┌──────────────────────────────────────┐
@@ -16,7 +20,8 @@ token number appears.
 │  [ Connect reader ]                  │
 │  Ready - present a token             │
 │ ┌──────────────────────────────────┐ │
-│ │           5B7D4039               │ │
+│ │           34935097               │ │
+│ │         Mifare 5B7D4039          │ │
 │ └──────────────────────────────────┘ │
 └──────────────────────────────────────┘
 ```
@@ -58,17 +63,18 @@ automatically.
 Messages are framed, checksummed, and XOR-obfuscated with a repeating key:
 
 ```
-02 06 88 61 66 A8      prime the reader   (opcode 0x24, argument 0x0A)
-02 05 88 92 DE         read the token     (opcode 0xD7)
+02 06 88 61 66 A8      set the LEDs       (RWD_LEDS 0x24, argument 0x0A)
+02 05 88 92 DE         read a Mifare card (RWD_READ_MIFARE 0xD7)
 02 25 88 55 …          reply with the token, obfuscated
 ```
 
 The app runs a five-message handshake on connect, then polls four times a
-second. Without the handshake the reader ignores reads, which is what makes a
-freshly plugged-in device look broken.
+second, alternating Mifare and Hitag2 reads. Without the handshake the reader
+ignores reads, which is what makes a freshly plugged-in device look broken.
 
 Full details — framing, checksum, the key, the address rules, the command map
-— are in [PROTOCOL.md](PROTOCOL.md).
+— are in [PROTOCOL.md](PROTOCOL.md). The command names and token number
+formulas come from Net2's own code.
 
 ## Testing
 

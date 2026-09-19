@@ -3,8 +3,7 @@ use leptos::reactive::owner::StoredValue;
 use leptos::task::spawn_local;
 use wasm_bindgen::prelude::*;
 use web_sys::{
-    HidConnectionEvent, HidDevice, HidDeviceFilter, HidDeviceRequestOptions,
-    HidInputReportEvent,
+    HidConnectionEvent, HidDevice, HidDeviceFilter, HidDeviceRequestOptions, HidInputReportEvent,
 };
 
 /// Paxton Net2 desktop reader: USB\VID_1071&PID_0001, HID vendor-defined.
@@ -16,11 +15,16 @@ const REPORT_BYTES: usize = 41;
 /// Any address with the high bit set works; it only picks the key phase.
 const ADDR: u8 = 0x88;
 
-/// Reading a token takes two messages: prime the reader, then collect.
-/// Net2 does exactly this, and the reader stays idle without the first one.
-const OP_PRIME: u8 = 0x24;
-const PRIME_ARG: u8 = 0x0A;
-const OP_READ: u8 = 0xD7;
+/// Net2 sets the LEDs before every read (RWD_LEDS), and the reader stays idle
+/// without it. Opcode names are Paxton's, from the BOARD_CMD enum in Net2.
+const OP_LEDS: u8 = 0x24;
+const LEDS_ARG: u8 = 0x0A;
+
+/// RWD_READ_MIFARE: answers with the card's UID, then zero padding.
+const OP_READ_MIFARE: u8 = 0xD7;
+
+/// TOKEN_R_DATA: answers with Hitag2 pages 2 to 7, four bytes each.
+const OP_READ_HITAG2: u8 = 0x14;
 
 /// Fast enough to feel instant, slow enough to leave the reader alone.
 const POLL_MS: i32 = 250;
@@ -44,10 +48,10 @@ const NAK: u8 = 0x13;
 /// What Net2 sends once before it starts polling. Without it the reader
 /// refuses the read, which is what a replug leaves us with.
 const INIT: [(u8, u8, &[u8]); 5] = [
-    (0x08, 0x25, &[]),
-    (0x88, 0x14, &[]),
-    (0xCD, 0x28, &[]),
-    (ADDR, OP_PRIME, &[PRIME_ARG]),
+    (0x08, 0x25, &[]),            // RWD_OPEN_LINK
+    (0x88, OP_READ_HITAG2, &[]),  // TOKEN_R_DATA
+    (0xCD, 0x28, &[]),            // RWD_SERIAL_NUMBER
+    (ADDR, OP_LEDS, &[LEDS_ARG]), // RWD_LEDS
     (ADDR, 0x00, &[]),
 ];
 
@@ -115,20 +119,146 @@ fn parse(bytes: &[u8]) -> Option<Reply> {
     })
 }
 
-/// A read answers with a long padded frame; the prime answers with a single
-/// zero byte. Telling them apart stops the prime ack wiping a fresh token.
+/// A read answers with a long padded frame; the LED command answers with a
+/// single zero byte. Telling them apart stops that ack wiping a fresh token.
 fn is_read_reply(reply: &Reply) -> bool {
     reply.msg_type == ACK && reply.payload.len() >= 16
 }
 
+/// Which kind of token a read asks the reader for. Net2 cycles through five;
+/// these are the two implemented here.
+#[derive(Clone, Copy, PartialEq)]
+enum Read {
+    Mifare,
+    /// Beta: decoded exactly as Net2 does, but never tested on a real fob.
+    Hitag2,
+}
+
+impl Read {
+    fn opcode(self) -> u8 {
+        match self {
+            Read::Mifare => OP_READ_MIFARE,
+            Read::Hitag2 => OP_READ_HITAG2,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+struct Token {
+    read: Read,
+    hex: String,
+    /// What Net2 shows as the token number.
+    number: u32,
+}
+
 /// The token, if this reply is a read that found a card. An empty payload
 /// means the reader answered but there was nothing on it.
-fn token(reply: &Reply) -> Option<String> {
-    let end = reply.payload.iter().rposition(|b| *b != 0).map_or(0, |i| i + 1);
-    match reply.msg_type == ACK && (4..=8).contains(&end) {
-        true => Some(hex(&reply.payload[..end])),
-        false => None,
+fn token(read: Read, reply: &Reply) -> Option<Token> {
+    if !is_read_reply(reply) {
+        return None;
     }
+    let p = &reply.payload;
+    match read {
+        Read::Mifare => {
+            let end = p.iter().rposition(|b| *b != 0)? + 1;
+            // at least four bytes, so a UID ending in 00 keeps its last byte
+            let uid = &p[..end.max(4)];
+            // Net2 reads the first four bytes big-endian and keeps 8 digits
+            let number = u32::from_be_bytes(uid[..4].try_into().ok()?) % 100_000_000;
+            Some(Token {
+                read,
+                hex: hex(uid),
+                number,
+            })
+        }
+        Read::Hitag2 => Some(Token {
+            read,
+            hex: hex(p.get(8..16)?),
+            number: hitag2_number(p)?,
+        }),
+    }
+}
+
+/// Net2's 5-bit digit codes, indexed by value. Mostly an odd-parity bit and
+/// then the value MSB first, but 14 breaks that rule, so this is Net2's table
+/// verbatim rather than a parity check. 13 and 15 end a number.
+const DIGIT_CODES: [u8; 16] = [
+    0b10000, 0b00001, 0b00010, 0b10011, 0b00100, 0b10101, 0b10110, 0b00111, 0b01000, 0b11001,
+    0b11010, 0b01011, 0b11100, 0b01101, 0b11110, 0b11111,
+];
+
+fn digit(code: u8) -> Option<u8> {
+    DIGIT_CODES.iter().position(|c| *c == code).map(|d| d as u8)
+}
+
+/// (page, bit offset from the MSB) of each 5-bit digit in the newer layout.
+const CARD_TYPE_DIGITS: [(usize, usize); 3] = [(6, 25), (7, 5), (7, 15)];
+const USER_CARD_DIGITS: [(usize, usize); 8] = [
+    (5, 10),
+    (5, 20),
+    (6, 0),
+    (6, 10),
+    (4, 5),
+    (4, 15),
+    (4, 25),
+    (5, 5),
+];
+
+/// The Net2 token number from a TOKEN_R_DATA reply, following
+/// DeriveHitagTokenNo in Net2's desktop reader service. Page 7 says which
+/// layout the fob uses. Net2 also rewrites some old fobs at this point; that
+/// is deliberately left out, since this app never writes to a token.
+fn hitag2_number(payload: &[u8]) -> Option<u32> {
+    let pages = payload.get(..24)?;
+    let page = |n: usize| u32::from_be_bytes(pages[4 * (n - 2)..][..4].try_into().unwrap());
+    let digits_at = |at: &[(usize, usize)]| -> Option<String> {
+        at.iter()
+            .map(|&(p, off)| digit((page(p) >> (27 - off)) as u8 & 0x1F).map(|d| d.to_string()))
+            .collect()
+    };
+    let pages_4_and_5 = u64::from(page(4)) << 32 | u64::from(page(5));
+    let number = match page(7) >> 2 & 0xF {
+        0b0100 => net2_number(pages_4_and_5, 64)?,
+        0b0001 if digits_at(&CARD_TYPE_DIGITS)?.parse() == Ok(1) => {
+            digits_at(&USER_CARD_DIGITS)?.parse().ok()?
+        }
+        0b0001 => net2_number(pages_4_and_5, 45)?,
+        _ => return None,
+    };
+    Some(number).filter(|n| *n != 0)
+}
+
+/// Net2's classic layout: 5-bit digits from the top of pages 4 and 5, six in
+/// page 4, then the rest from the start of page 5, stopping at 13 or 15.
+/// Only the first `len` bits count. Follows DeriveNet2No, quirks included.
+fn net2_number(bits: u64, len: usize) -> Option<u32> {
+    let mut digits = String::new();
+    let mut zeros = false;
+    let mut i = 0;
+    while i < len - 5 {
+        let mut code = (bits >> (59 - i)) as u8 & 0x1F;
+        // magstripe-style tokens pad leading digits with 00000, not the 0 code
+        if code == 0 && (i == 0 || zeros) {
+            code = DIGIT_CODES[0];
+            zeros = true;
+        } else {
+            zeros = false;
+        }
+        let Some(d) = digit(code) else {
+            // only zeros may follow the last digit
+            if bits << i >> (64 - (len - i)) != 0 {
+                return None;
+            }
+            break;
+        };
+        if d == 13 || d == 15 {
+            break;
+        }
+        digits += &d.to_string();
+        i = if digits.len() == 6 { 32 } else { i + 5 };
+    }
+    let padded = format!("{digits:0>8}");
+    padded[padded.len() - 8..].parse().ok()
 }
 
 fn main() {
@@ -166,17 +296,22 @@ async fn send(dev: &HidDevice, mut buf: [u8; REPORT_BYTES]) -> Result<(), JsValu
     js_sys::Promise::race(&racers).await.map(|_| ())
 }
 
-/// Ask the reader for whatever token is on it. The answer to the read arrives
-/// separately, as an input report.
-async fn poll_once(dev: &HidDevice) -> Result<(), JsValue> {
-    send(dev, frame(ADDR, OP_PRIME, &[PRIME_ARG])).await?;
-    send(dev, frame(ADDR, OP_READ, &[])).await
+/// Ask the reader for one kind of token. The answer to the read arrives
+/// separately, as an input report, so note which read it will be answering.
+async fn poll_once(
+    dev: &HidDevice,
+    read: Read,
+    reading: StoredValue<Read, LocalStorage>,
+) -> Result<(), JsValue> {
+    send(dev, frame(ADDR, OP_LEDS, &[LEDS_ARG])).await?;
+    reading.set_value(read);
+    send(dev, frame(ADDR, read.opcode(), &[])).await
 }
 
 /// Listen for replies, then keep asking until the reader goes away.
 async fn run(
     dev: HidDevice,
-    card: RwSignal<Option<String>>,
+    card: RwSignal<Option<Token>>,
     status: RwSignal<String>,
     held: StoredValue<Option<HidDevice>, LocalStorage>,
 ) {
@@ -187,6 +322,8 @@ async fn run(
         }
     }
 
+    // the handshake includes a Hitag2 read, so that is what replies answer first
+    let reading = StoredValue::new_local(Read::Hitag2);
     let listener = dev.clone();
     let cb = Closure::<dyn FnMut(HidInputReportEvent)>::new(move |ev: HidInputReportEvent| {
         // keep `listener` alive: Chrome stops delivering reports once the
@@ -194,9 +331,20 @@ async fn run(
         let _ = &listener;
         let data = ev.data();
         let bytes: Vec<u8> = (0..data.byte_length()).map(|i| data.get_uint8(i)).collect();
-        // the prime and the handshake answer too, so only act on reads
-        if let Some(reply) = parse(&bytes).filter(is_read_reply) {
-            card.set(token(&reply));
+        let Some(reply) = parse(&bytes) else { return };
+        // the LED command answers with a short ack; anything else answers the read
+        if reply.msg_type == ACK && !is_read_reply(&reply) {
+            return;
+        }
+        let read = reading.get_value();
+        match token(read, &reply) {
+            Some(t) => card.set(Some(t)),
+            // nothing of this kind on the reader, so only a token this kind
+            // of read found can have been lifted off
+            None if card.with_untracked(|c| c.as_ref().is_some_and(|t| t.read == read)) => {
+                card.set(None)
+            }
+            None => {}
         }
     });
     dev.set_oninputreport(Some(cb.as_ref().unchecked_ref()));
@@ -213,7 +361,11 @@ async fn run(
     }
 
     status.set("Ready - present a token".into());
-    while poll_once(&dev).await.is_ok() {
+    let mut reads = [Read::Mifare, Read::Hitag2].into_iter().cycle();
+    while poll_once(&dev, reads.next().unwrap(), reading)
+        .await
+        .is_ok()
+    {
         sleep(POLL_MS).await;
     }
     held.set_value(None);
@@ -223,7 +375,7 @@ async fn run(
 
 #[component]
 fn App() -> impl IntoView {
-    let card = RwSignal::new(None::<String>);
+    let card = RwSignal::new(None::<Token>);
     let status = RwSignal::new("Not connected".to_string());
     let held = StoredValue::new_local(None::<HidDevice>);
 
@@ -240,7 +392,10 @@ fn App() -> impl IntoView {
             return;
         }
         if let Ok(devices) = hid().get_devices().await {
-            if let Some(dev) = devices.iter().find(|d| u32::from(d.vendor_id()) == PAXTON_VID) {
+            if let Some(dev) = devices
+                .iter()
+                .find(|d| u32::from(d.vendor_id()) == PAXTON_VID)
+            {
                 run(dev, card, status, held).await;
             }
         }
@@ -290,7 +445,14 @@ fn App() -> impl IntoView {
             <button on:click=connect>"Connect reader"</button>
             <p class="status">{status}</p>
             <div class="token" class:waiting=move || card.get().is_none()>
-                {move || card.get().unwrap_or("--------".to_string())}
+                {move || card.get().map_or("--------".to_string(), |t| t.number.to_string())}
+                <div class="detail">
+                    {move || match card.get() {
+                        Some(t) if t.read == Read::Hitag2 => format!("Hitag2 {} - beta, check against Net2", t.hex),
+                        Some(t) => format!("Mifare {}", t.hex),
+                        None => "Net2 token number".to_string(),
+                    }}
+                </div>
             </div>
         </main>
     }
@@ -306,25 +468,45 @@ mod tests {
     // decoder share the same misunderstanding, so these are the tests that
     // can actually tell us the model of the protocol is wrong.
     const REAL_TOKEN_READ: [u8; 37] = [
-        0x02, 0x25, 0xA5, 0x71, 0x35, 0x09, 0x05, 0x55, 0x65, 0x70, 0x68, 0x61, 0x6E, 0x74,
-        0x45, 0x6C, 0x65, 0x70, 0x68, 0x61, 0x6E, 0x74, 0x45, 0x6C, 0x65, 0x70, 0x68, 0x61,
-        0x6E, 0x74, 0x45, 0x6C, 0x65, 0x70, 0x68, 0x61, 0xF9,
+        0x02, 0x25, 0xA5, 0x71, 0x35, 0x09, 0x05, 0x55, 0x65, 0x70, 0x68, 0x61, 0x6E, 0x74, 0x45,
+        0x6C, 0x65, 0x70, 0x68, 0x61, 0x6E, 0x74, 0x45, 0x6C, 0x65, 0x70, 0x68, 0x61, 0x6E, 0x74,
+        0x45, 0x6C, 0x65, 0x70, 0x68, 0x61, 0xF9,
     ];
     const REAL_VERSION: [u8; 18] = [
-        0x02, 0x12, 0x88, 0x55, 0x39, 0x36, 0x32, 0x48, 0x31, 0x2B, 0x27, 0x65, 0x3A, 0x54,
-        0x5E, 0x59, 0x55, 0xA3,
+        0x02, 0x12, 0x88, 0x55, 0x39, 0x36, 0x32, 0x48, 0x31, 0x2B, 0x27, 0x65, 0x3A, 0x54, 0x5E,
+        0x59, 0x55, 0xA3,
     ];
     const REAL_PLAINTEXT_ACK: [u8; 6] = [0x02, 0x06, 0x00, 0x10, 0x00, 0xE7];
     const REAL_NAK: [u8; 25] = [
-        0x02, 0x19, 0x88, 0x13, 0x02, 0x05, 0x88, 0x92, 0xDE, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4A,
+        0x02, 0x19, 0x88, 0x13, 0x02, 0x05, 0x88, 0x92, 0xDE, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4A,
     ];
 
     #[test]
     fn decodes_the_token_from_a_real_read() {
         let reply = parse(&REAL_TOKEN_READ).expect("a captured frame must parse");
         assert_eq!(reply.msg_type, ACK);
-        assert_eq!(token(&reply).as_deref(), Some("5B7D4039"));
+        let t = token(Read::Mifare, &reply).expect("a card was on the reader");
+        assert_eq!(t.hex, "5B7D4039");
+        // what Net2 itself showed for this card
+        assert_eq!(t.number, 34935097);
+    }
+
+    #[test]
+    fn decodes_a_hitag2_fob_in_the_net2_layout() {
+        // Synthetic: no Hitag2 fob has been read yet. Built from Net2's digit
+        // table for 12345678, so it only proves the transcription of Net2's
+        // decoder, not that a real fob looks like this.
+        let codes: Vec<u64> = [1, 2, 3, 4, 5, 6, 7, 8, 15]
+            .map(|d| u64::from(DIGIT_CODES[d]))
+            .to_vec();
+        let page4 = codes[..6].iter().fold(0, |acc, c| acc << 5 | c) << 2;
+        let page5 = codes[6..].iter().fold(0, |acc, c| acc << 5 | c) << 17;
+        let mut payload = [0u8; 32];
+        payload[8..12].copy_from_slice(&(page4 as u32).to_be_bytes());
+        payload[12..16].copy_from_slice(&(page5 as u32).to_be_bytes());
+        payload[20..24].copy_from_slice(&(0b0100u32 << 2).to_be_bytes());
+        assert_eq!(hitag2_number(&payload), Some(12345678));
     }
 
     #[test]
@@ -350,8 +532,8 @@ mod tests {
 
     #[test]
     fn builds_the_two_frames_net2_sends_for_a_read() {
-        assert_eq!(hex(&frame(ADDR, OP_PRIME, &[PRIME_ARG])[..6]), "0206886166A8");
-        assert_eq!(hex(&frame(ADDR, OP_READ, &[])[..5]), "02058892DE");
+        assert_eq!(hex(&frame(ADDR, OP_LEDS, &[LEDS_ARG])[..6]), "0206886166A8");
+        assert_eq!(hex(&frame(ADDR, OP_READ_MIFARE, &[])[..5]), "02058892DE");
     }
 
     #[test]
@@ -375,7 +557,8 @@ mod tests {
     fn an_empty_read_means_no_card_rather_than_an_empty_token() {
         let empty = parse(&frame(ADDR, ACK, &[0u8; 32])).expect("must parse");
         assert!(is_read_reply(&empty));
-        assert_eq!(token(&empty), None);
+        assert!(token(Read::Mifare, &empty).is_none());
+        assert!(token(Read::Hitag2, &empty).is_none());
     }
 
     /// Opcodes this app actually builds, plus the reply types the reader
@@ -385,7 +568,17 @@ mod tests {
     /// here, and it cannot bite, because no opcode in real traffic can
     /// produce that byte under any of the eight key positions.
     fn real_opcodes() -> impl Strategy<Value = u8> {
-        prop::sample::select(vec![ACK, NAK, 0x00, 0x14, 0x24, 0x25, 0x28, 0x64, OP_READ])
+        prop::sample::select(vec![
+            ACK,
+            NAK,
+            0x00,
+            0x14,
+            0x24,
+            0x25,
+            0x28,
+            0x64,
+            OP_READ_MIFARE,
+        ])
     }
 
     proptest! {

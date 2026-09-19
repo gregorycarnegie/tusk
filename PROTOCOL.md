@@ -1,8 +1,10 @@
 # Paxton Net2 desktop reader - USB protocol
 
 Reverse engineered from the device plus one USBPcap capture of the Net2
-software. Everything here is verified against real traffic, and the app
-asserts the key parts against captured bytes at startup.
+software. Everything here is verified against real traffic, and the tests
+check the key parts against captured bytes. Opcode names and the token number
+formulas come from Net2 itself: `Paxton.Net2.DesktopReaderSrv.dll` is .NET,
+and its BOARD_CMD enum and Derive*TokenNo methods decompile readably.
 
 ## Device
 
@@ -64,45 +66,104 @@ The reader refuses reads until this runs. It is what Net2 sends once, before
 any polling, and a replug resets the reader back to needing it.
 
     addr  op    payload   wire bytes
-    0x08  0x25            02 05 08 25 CB      ping, plaintext address
-    0x88  0x14            02 05 88 51 1F      open session
-    0xCD  0x28            02 05 CD 49 E2
-    0x88  0x24  0x0A      02 06 88 61 66 A8
-    0x88  0x00            02 05 88 45 2B
+    0x08  0x25            02 05 08 25 CB      RWD_OPEN_LINK, plaintext address
+    0x88  0x14            02 05 88 51 1F      TOKEN_R_DATA (a Hitag2 read)
+    0xCD  0x28            02 05 CD 49 E2      RWD_SERIAL_NUMBER
+    0x88  0x24  0x0A      02 06 88 61 66 A8   RWD_LEDS
+    0x88  0x00            02 05 88 45 2B      unknown
 
 ## Reading a token
 
-Two messages per read. The prime is required; the reader stays idle without it.
+Two messages per read: set the LEDs, then read one kind of token. Net2 does
+this every poll and the reader stays idle without the first one.
 
-    OUT  02 06 88 61 66 A8   opcode 0x24, payload 0x0A   prime
+    OUT  02 06 88 61 66 A8   RWD_LEDS 0x0A
     IN   02 06 88 55 6C AE   ack, payload 0x00
-    OUT  02 05 88 92 DE      opcode 0xD7                 read
+    OUT  02 05 88 92 DE      RWD_READ_MIFARE
     IN   02 25 88 55 ...     ack, 32-byte payload
 
-Unmask the read reply and the payload is the token followed by zero padding.
-An all-zero payload means no card. Tell the two acks apart by payload length:
-the prime answers with one byte, a read with 32.
+Tell the two acks apart by payload length: the LED command answers with one
+byte, a read with 32. Net2 sets the LEDs to 0x06 instead after a token is
+found. Each read command asks for one card technology, and Net2 cycles through
+five of them, moving on when a read does not come back as an ack:
 
-    0225 a5 71 35090555 657068616e74456c...   ->  token 5B7D4039
+    0x14  TOKEN_R_DATA       Hitag2 pages (Paxton's own fobs)
+    0xC7  RWD_READ_EM4100
+    0xD7  RWD_READ_MIFARE
+    0xA8  RWD_READ_HITAG_1
+    0xD8  RWD_READ_HID
+
+Tusk reads Mifare and, in beta, Hitag2.
+
+### Mifare
+
+The payload is the UID followed by zero padding; all zeros means no card.
+Net2's token number is the first four bytes as a big-endian integer, keeping
+the last eight decimal digits:
+
+    0225 a5 71 35090555 657068616e74456c...   ->  UID 5B7D4039
+    0x5B7D4039 = 1534935097  ->  mod 10^8  ->  34935097, as Net2 shows it
+
+### Hitag2 (beta)
+
+Implemented from Net2's decoder but not yet tested on a real fob, so the reply
+layout is inferred from that code rather than observed. The payload holds
+pages 2 to 7, four bytes each, big-endian, so page n starts at byte 4(n-2).
+
+Digits are 5-bit codes, most significant bit first. The table is Net2's; it is
+mostly an odd-parity bit plus the value, except 14:
+
+    0 10000   4 00100   8 01000   12 11100
+    1 00001   5 10101   9 11001   13 01101  end
+    2 00010   6 10110  10 11010   14 11110
+    3 10011   7 00111  11 01011   15 11111  end
+
+Bits 26-29 of page 7 pick the layout:
+
+- `0100`, Net2: digits from bit 0 of pages 4+5 as one 64-bit string, six from
+  page 4, then from bit 32 (page 5) on, until an end code. A leading run of
+  `00000` counts as zeros. Keep the last eight digits.
+- `0001`, newer: three digits at (page, bit) (6,25) (7,5) (7,15) give a card
+  type. Type 1, a user card, has its number at (5,10) (5,20) (6,0) (6,10)
+  (4,5) (4,15) (4,25) (5,5). Any other type uses the Net2 layout over only the
+  first 45 bits.
+
+Net2 also rewrites some old-layout fobs when it sees them (RevertTokenToModeOne).
+Tusk never writes to a token, so that is left out.
 
 ## Command map
 
-Opcodes as decoded, at any address with the high bit set.
+Opcodes as decoded, at any address with the high bit set, named from Net2's
+BOARD_CMD enum where it has one.
 
-    0xD7  read token        ack, token then zero padding
-    0x24  prime a read      arg 0x0A, ack with a zero byte
-    0x64  get version       ack, "USB PES V1.14"
-    0x14  open session      part of the handshake
-    0x25  status ping       works in both dialects
-    0x28, 0x00              part of the handshake, purpose unknown
-    most others             0x12, no such command
+    0x14  TOKEN_R_DATA           Hitag2 pages
+    0x15  TOKEN_R_SERIAL_NO
+    0x16  TOKEN_W_CONFIGPSWTAG
+    0x17  TOKEN_W_PAGES
+    0x18  TOKEN_W_PASSWORDRWD
+    0x1E  RWD_BEEP
+    0x21  RWD_FIRMWARE_VERSION
+    0x24  RWD_LEDS               arg 0x0A idle, 0x06 token found
+    0x25  RWD_OPEN_LINK          works in both dialects
+    0x26  RWD_RESET
+    0x28  RWD_SERIAL_NUMBER
+    0x64  -                      ack, "USB PES V1.14"
+    0xA8  RWD_READ_HITAG_1
+    0xC7  RWD_READ_EM4100
+    0xC8  RWD_TURN_OFF_ON_FIELD
+    0xD7  RWD_READ_MIFARE        ack, UID then zero padding
+    0xD8  RWD_READ_HID
+    most others                  0x12, no such command
 
-Something around opcode 0x26-0x29 sent to a plaintext address makes the reader
-flash red and re-enumerate on the USB bus.
+The enum also has firmware, ASIC and settings commands (0x0A-0x0D, 0x1F-0x2D)
+that Tusk has no reason to touch. The TOKEN_W_ commands write to tokens.
+
+Sweeping opcodes 0x26-0x29 at a plaintext address made the reader flash red
+and re-enumerate on the USB bus; 0x26 being RWD_RESET explains it.
 
 ## Still unknown
 
-Nothing needed for reading tokens. Not investigated: what 0x28 and 0x00 do,
-the longer status structures (0x61 returns 01 00 00 FF FF FF 08 ... 05 90 04),
-whether the address means anything beyond picking the key phase, and whether
-write or configuration commands exist.
+Whether the Hitag2 reply really has the layout Net2's code implies - it needs
+a Paxton fob. Not investigated: what 0x00 does, the longer status structures
+(0x61 returns 01 00 00 FF FF FF 08 ... 05 90 04), and whether the address
+means anything beyond picking the key phase.

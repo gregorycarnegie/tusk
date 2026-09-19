@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The Net2 token number, shown as Net2 shows it, with the raw hex beneath. For
+  Mifare that is the first four UID bytes, big-endian, modulo 10^8. Checked
+  against Net2 with a real card.
+- **Beta:** Paxton Hitag2 fobs, read with `TOKEN_R_DATA` (`0x14`) in
+  alternation with the Mifare read, and decoded following Net2's own decoder.
+  Not yet tested on a real fob.
+- Paxton's names for every opcode, from Net2's `BOARD_CMD` enum, in
+  `PROTOCOL.md`.
+
+### Changed
+
+- What was called the prime (`0x24`) is `RWD_LEDS`, and the read (`0xD7`) is
+  `RWD_READ_MIFARE`. Code and docs now use those names.
+
+### Fixed
+
+- A 4-byte Mifare UID ending in `00` was treated as no card.
+
 ## [0.1.0] - 2026-09-19
 
 First working version: reads tokens from a Paxton Net2 USB desktop reader in
