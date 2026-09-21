@@ -2,7 +2,7 @@
 # default no host can execute forces every test command to name a triple, and
 # a hardcoded triple is only ever right on one developer's machine. So the
 # host stays the default, and wasm32 is named where it is actually wanted --
-# trunk passes it itself, and the browser tests have the `w` alias below.
+# the build names it explicitly, and browser tests have the `w` alias below.
 [build]
 rustflags = ["--cfg=web_sys_unstable_apis"]
 
@@ -15,4 +15,4 @@ runner = "wasm-bindgen-test-runner"
 # The browser tests: the polling loop in src/reader.rs, run in headless
 # Chrome against a fake reader. Plain `cargo test` runs the host ones -- the
 # protocol and token decoding, with proptest.
-w = "test --target wasm32-unknown-unknown"
+w = "test --lib --target wasm32-unknown-unknown"

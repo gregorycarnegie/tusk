@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Replace the Leptos UI with a Topcoat page rendered at build time. Keep the
+  Rust WebHID reader in WebAssembly and host the exported files on GitHub Pages.
+- Replace Trunk with the Topcoat exporter and wasm-bindgen build commands;
+  add a browser smoke test for the exported site under a repository subpath.
+
 ## [0.2.2] - 2026-09-19
 
 ### Added

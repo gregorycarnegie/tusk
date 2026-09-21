@@ -7,8 +7,11 @@ most of it cannot be tested without the hardware in front of you.
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo install trunk
-trunk serve --port 8080
+cargo install wasm-bindgen-cli --version 0.2.128 --locked
+cargo run --locked -- dist
+cargo build --locked --release --lib --target wasm32-unknown-unknown
+wasm-bindgen --target web --no-typescript --out-dir dist target/wasm32-unknown-unknown/release/tusk.wasm
+python -m http.server 8080 --directory dist --bind 127.0.0.1
 ```
 
 Then open <http://127.0.0.1:8080> in Chrome or Edge. Firefox and Safari have
@@ -20,16 +23,21 @@ Chrome cannot open the device, which looks exactly like a reader that will not
 answer. Windows has no equivalent gate, so a build that works there can still
 fail here for reasons that have nothing to do with the code.
 
+Topcoat generates the page on the host; only the reader and DOM controls compile
+to WebAssembly. Re-run the three build commands after editing. `dist` is generated
+and ignored by Git. There is no application server to deploy.
+
 ## Running the tests
 
 ```sh
 cargo test   # protocol and token decoding, on the host
 cargo w      # the polling loop, in headless Chrome
+python tests/static_site.py  # after building dist; needs Chrome and chromedriver
 ```
 
 The host is the default target, so `cargo test` needs no triple and works
 wherever you are. `cargo w` is an alias for
-`cargo test --target wasm32-unknown-unknown`, which runs the tests in
+`cargo test --lib --target wasm32-unknown-unknown`, which runs the tests in
 `src/reader.rs` with `wasm-bindgen-test-runner`. It needs Chrome, a matching
 `chromedriver`, and `wasm-bindgen-cli` at exactly the `wasm-bindgen` version
 in `Cargo.lock`:

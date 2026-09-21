@@ -16,7 +16,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  TRUNK_VERSION: v0.21.14
 
 jobs:
   check:
@@ -67,16 +66,19 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - name: Install Trunk
+      - id: wasm-bindgen
         run: |
-          base=https://github.com/trunk-rs/trunk/releases/download/$TRUNK_VERSION
-          file=trunk-x86_64-unknown-linux-gnu.tar.gz
-          curl -fsSLO "$base/$file" -O "$base/$file.sha256"
-          # the .sha256 file holds only the hash, so pair it with the name
-          echo "$(cat "$file.sha256")  $file" | sha256sum -c
-          tar -xzf "$file" -C ~/.cargo/bin
-      # Pages serves the site from /<repo>/, not the domain root.
-      - run: trunk build --release --public-url "/${{ github.event.repository.name }}/"
+          version=$(cargo metadata --format-version 1 --locked |
+            jq -r '.packages[] | select(.name == "wasm-bindgen") | .version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
+      - run: cargo run --locked -- dist
+      - run: cargo build --locked --release --lib --target wasm32-unknown-unknown
+      - run: wasm-bindgen --target web --no-typescript --out-dir dist target/wasm32-unknown-unknown/release/tusk.wasm
+      # Relative URLs must also work below the repository subpath on Pages.
+      - run: CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" python3 tests/static_site.py
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist

@@ -2,18 +2,32 @@
 name = "tusk"
 version = "0.2.2"
 edition = "2024"
+rust-version = "1.98"
 license = "MIT"
 description = "Read Paxton Net2 tokens in the browser over WebHID"
 repository = "https://github.com/gregorycarnegie/tusk"
 
-[dependencies]
-leptos = { version = "0.8", features = ["csr"] }
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "tusk-site"
+path = "src/main.rs"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+topcoat = { version = "0.8.1", default-features = false, features = ["view"] }
+futures-executor = "0.3"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = [
     "Clipboard",
     "Document",
     "Element",
+    "HtmlElement",
+    "HtmlButtonElement",
     "MediaQueryList",
     "Storage",
     "Hid",
@@ -30,13 +44,12 @@ web-sys = { version = "0.3", features = [
     "Window",
 ] }
 
-# Host tests: `cargo t`. proptest does not build for wasm32.
+# Host tests: `cargo test`. proptest does not build for wasm32.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 # round-trip property testing for the frame codec
 proptest = "1"
 
-# Browser tests: plain `cargo test`, run in headless Chrome by
+# Browser tests: `cargo w`, run in headless Chrome by
 # wasm-bindgen-test-runner (.cargo/config.toml), against a fake reader.
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3"
-wasm-bindgen-futures = "0.4"

@@ -1,6 +1,9 @@
 //! Talking to the reader over WebHID and keeping the page's state in step.
 
-use leptos::{prelude::*, reactive::owner::StoredValue};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 use wasm_bindgen::prelude::*;
 use web_sys::{HidDevice, HidInputReportEvent};
 
@@ -33,10 +36,40 @@ pub enum Tone {
     Problem,
 }
 
-pub type Status = RwSignal<(Tone, String)>;
+/// Shared by the polling loop and the browser controls, without a UI framework.
+pub struct State {
+    pub card: Option<Token>,
+    pub status: (Tone, String),
+    pub link: Link,
+    pub copied: String,
+    pub on_change: fn(&Self),
+}
 
-pub fn say(status: Status, tone: Tone, message: impl Into<String>) {
-    status.set((tone, message.into()));
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            card: None,
+            status: (Tone::Idle, "Not connected".into()),
+            link: Link::default(),
+            copied: String::new(),
+            on_change: |_| {},
+        }
+    }
+}
+
+impl State {
+    pub fn say(&mut self, tone: Tone, message: impl Into<String>) {
+        self.status = (tone, message.into());
+        (self.on_change)(self);
+    }
+
+    pub fn show(&mut self, card: Option<Token>) {
+        if self.card != card {
+            self.copied.clear();
+            self.card = card;
+            (self.on_change)(self);
+        }
+    }
 }
 
 /// The browser's own message for a failed WebHID call. `{:?}` on the JsValue
@@ -80,13 +113,9 @@ async fn send(dev: &HidDevice, mut buf: [u8; REPORT_BYTES]) -> Result<(), JsValu
 
 /// Ask the reader for one kind of token. The answer to the read arrives
 /// separately, as an input report, so note which read it will be answering.
-async fn poll_once(
-    dev: &HidDevice,
-    read: Read,
-    reading: StoredValue<Read, LocalStorage>,
-) -> Result<(), JsValue> {
+async fn poll_once(dev: &HidDevice, read: Read, reading: &Cell<Read>) -> Result<(), JsValue> {
     send(dev, frame(ADDR, OP_LEDS, &[LEDS_ARG])).await?;
-    reading.set_value(read);
+    reading.set(read);
     send(dev, frame(ADDR, read.opcode(), &[])).await
 }
 
@@ -103,34 +132,29 @@ pub struct Link {
 }
 
 /// Listen for replies, then keep asking until the reader goes away.
-pub async fn run(
-    dev: HidDevice,
-    card: RwSignal<Option<Token>>,
-    status: Status,
-    link: StoredValue<Link, LocalStorage>,
-) {
+pub async fn run(dev: HidDevice, state: Rc<RefCell<State>>) {
     // Claim the reader before the first await, so startup and the button
     // cannot each start a loop for it. An unplugged reader is closed, which is
     // what lets a new connection in while the old loop winds down.
-    if link.with_value(|l| l.opening || l.dev.as_ref().is_some_and(|d| d.opened())) {
+    if state.borrow().link.opening || state.borrow().link.dev.as_ref().is_some_and(|d| d.opened()) {
         return;
     }
-    let session = link.with_value(|l| l.session) + 1;
-    link.set_value(Link {
+    let session = state.borrow().link.session + 1;
+    state.borrow_mut().link = Link {
         dev: Some(dev.clone()),
         session,
         opening: true,
-    });
+    };
     // not "Ready" until the reader has actually answered a read
-    say(status, Tone::Busy, "Connecting to the reader");
-    let owned = || link.with_value(|l| l.session == session);
+    state
+        .borrow_mut()
+        .say(Tone::Busy, "Connecting to the reader");
+    let owned = || state.borrow().link.session == session;
     let release = || {
-        link.update_value(|l| {
-            *l = Link {
-                session,
-                ..Link::default()
-            }
-        })
+        state.borrow_mut().link = Link {
+            session,
+            ..Link::default()
+        };
     };
 
     // nothing else can claim the reader while `opening` is set, so this
@@ -139,23 +163,27 @@ pub async fn run(
         && let Err(e) = dev.open().await
     {
         release();
-        say(
-            status,
+        state.borrow_mut().say(
             Tone::Problem,
             format!("Could not open the reader: {}", reason(&e)),
         );
         return;
     }
-    link.update_value(|l| l.opening = false);
+    state.borrow_mut().link.opening = false;
 
     // the handshake includes a Hitag2 read, so that is what replies answer first
-    let reading = StoredValue::new_local(Read::Hitag2);
-    let misses = StoredValue::new_local(0u32);
+    let reading = Rc::new(Cell::new(Read::Hitag2));
+    let misses = Rc::new(Cell::new(0u32));
     let listener = dev.clone();
+    let (callback_state, callback_reading, callback_misses) =
+        (state.clone(), reading.clone(), misses.clone());
     let cb = Closure::<dyn FnMut(HidInputReportEvent)>::new(move |ev: HidInputReportEvent| {
         // keep `listener` alive: Chrome stops delivering reports once the
         // HIDDevice wrapper is garbage collected
         let _ = &listener;
+        if callback_state.borrow().link.session != session {
+            return;
+        }
         let data = ev.data();
         let bytes: Vec<u8> = (0..data.byte_length()).map(|i| data.get_uint8(i)).collect();
         let Some(reply) = parse(&bytes) else { return };
@@ -164,30 +192,33 @@ pub async fn run(
             return;
         }
         // an answer to a read is the only proof the reader is working
-        misses.set_value(0);
-        if status.with_untracked(|s| s.1 != READY) {
-            say(status, Tone::Ready, READY);
+        callback_misses.set(0);
+        let mut state = callback_state.borrow_mut();
+        if state.status.1 != READY {
+            state.say(Tone::Ready, READY);
         }
-        let read = reading.get_value();
+        let read = callback_reading.get();
         match token(read, &reply) {
-            Some(t) => card.set(Some(t)),
+            Some(t) => state.show(Some(t)),
             // nothing of this kind on the reader, so only a token this kind
             // of read found can have been lifted off
-            None if card.with_untracked(|c| c.as_ref().is_some_and(|t| t.read == read)) => {
-                card.set(None)
-            }
+            None if state.card.as_ref().is_some_and(|t| t.read == read) => state.show(None),
             None => {}
         }
     });
     dev.set_oninputreport(Some(cb.as_ref().unchecked_ref()));
-    cb.forget();
+    let detach = || {
+        // An old session must not remove a new session's listener on the same device.
+        if dev.oninputreport().map(JsValue::from).as_ref() == Some(cb.as_ref()) {
+            dev.set_oninputreport(None);
+        }
+    };
 
     for (addr, opcode, args) in INIT {
         if let Err(e) = send(&dev, frame(addr, opcode, args)).await {
             if owned() {
                 release();
-                say(
-                    status,
+                state.borrow_mut().say(
                     Tone::Problem,
                     // a reader left in a bad state only recovers from a cold start
                     format!(
@@ -196,6 +227,7 @@ pub async fn run(
                     ),
                 );
             }
+            detach();
             return;
         }
         sleep(40).await;
@@ -203,30 +235,35 @@ pub async fn run(
 
     let mut reads = [Read::Mifare, Read::Hitag2].into_iter().cycle();
     while owned()
-        && poll_once(&dev, reads.next().unwrap(), reading)
+        && poll_once(&dev, reads.next().unwrap(), &reading)
             .await
             .is_ok()
     {
         sleep(POLL_MS).await;
         // the reply lands during the sleep and resets this
-        misses.update_value(|m| *m += 1);
-        if misses.get_value() == MAX_MISSES {
-            card.set(None);
-            say(status, Tone::Problem, "The reader is not answering");
+        if !owned() {
+            break;
+        }
+        misses.set(misses.get() + 1);
+        if misses.get() == MAX_MISSES {
+            state.borrow_mut().show(None);
+            state
+                .borrow_mut()
+                .say(Tone::Problem, "The reader is not answering");
         }
     }
     if owned() {
         release();
-        card.set(None);
+        state.borrow_mut().show(None);
         // The reader has no USB serial number, so Chrome forgets the
         // permission when it is unplugged and never tells the page it came
         // back. Only the picker can grant it again.
-        say(
-            status,
+        state.borrow_mut().say(
             Tone::Idle,
             "Reader unplugged - plug it back in, then click Connect reader",
         );
     }
+    detach();
 }
 
 /// These run in a real browser against a fake reader: `cargo test` (wasm32)
@@ -358,32 +395,20 @@ mod tests {
     }
 
     /// The state the page hands to `run`.
-    #[derive(Clone, Copy)]
-    struct Page {
-        card: RwSignal<Option<Token>>,
-        status: Status,
-        link: StoredValue<Link, LocalStorage>,
-    }
+    struct Page(Rc<RefCell<State>>);
 
     impl Page {
         fn new() -> Self {
-            Self {
-                card: RwSignal::new(None),
-                status: RwSignal::new((Tone::Idle, String::new())),
-                link: StoredValue::new_local(Link::default()),
-            }
+            Self(Rc::new(RefCell::new(State::default())))
         }
-
-        fn connect(self, reader: &Fake) {
-            spawn_local(run(reader.dev.clone(), self.card, self.status, self.link));
+        fn connect(&self, reader: &Fake) {
+            spawn_local(run(reader.dev.clone(), self.0.clone()));
         }
-
-        fn message(self) -> String {
-            self.status.with_untracked(|s| s.1.clone())
+        fn message(&self) -> String {
+            self.0.borrow().status.1.clone()
         }
-
-        fn number(self) -> Option<u32> {
-            self.card.with_untracked(|c| c.as_ref().map(|t| t.number))
+        fn number(&self) -> Option<u32> {
+            self.0.borrow().card.as_ref().map(|t| t.number)
         }
     }
 
@@ -482,7 +507,7 @@ mod tests {
         reader.silent.set(true);
         page.connect(&reader);
         assert!(until(2000, || page.message() == NOT_ANSWERING).await);
-        assert!(page.status.with_untracked(|s| s.0 == Tone::Problem));
+        assert!(page.0.borrow().status.0 == Tone::Problem);
     }
 
     #[wasm_bindgen_test]

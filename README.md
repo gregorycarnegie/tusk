@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.98%2B-orange.svg)](https://www.rust-lang.org)
-[![Leptos](https://img.shields.io/badge/leptos-0.8-ef3939.svg)](https://leptos.dev)
+[![Topcoat](https://img.shields.io/badge/topcoat-0.8.1-56AA1C.svg)](https://github.com/tokio-rs/topcoat)
 [![Browser](https://img.shields.io/badge/browser-Chrome%20%7C%20Edge-4285f4.svg)](https://developer.mozilla.org/en-US/docs/Web/API/WebHID_API)
 [![CI](https://github.com/gregorycarnegie/tusk/actions/workflows/ci.yml/badge.svg)](https://github.com/gregorycarnegie/tusk/actions/workflows/ci.yml)
 
@@ -52,18 +52,21 @@ out was most of this project; [PROTOCOL.md](PROTOCOL.md) is the write-up.
 
   `uaccess` grants an ACL to whoever is logged in at the active seat, the same
   mechanism udev uses for webcams.
-- **Rust** with the `wasm32-unknown-unknown` target, and
-  [Trunk](https://trunkrs.dev).
+- **Rust 1.98+** with the `wasm32-unknown-unknown` target, and
+  `wasm-bindgen-cli` matching the `wasm-bindgen` version in `Cargo.lock`.
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo install trunk
+cargo install wasm-bindgen-cli --version 0.2.128 --locked
 ```
 
 ## Running
 
 ```sh
-trunk serve --port 8080
+cargo run --locked -- dist
+cargo build --locked --release --lib --target wasm32-unknown-unknown
+wasm-bindgen --target web --no-typescript --out-dir dist target/wasm32-unknown-unknown/release/tusk.wasm
+python -m http.server 8080 --directory dist --bind 127.0.0.1
 ```
 
 Open <http://127.0.0.1:8080>, click **Connect reader**, and pick the device.
@@ -78,6 +81,21 @@ reader** again: the reader has no USB serial number, so Chrome forgets the
 permission when it is unplugged and the page cannot reconnect by itself.
 
 ## How it works
+
+Topcoat renders the complete HTML page at build time. The browser loads a small
+Rust WebAssembly module for WebHID, token decoding, and updating the controls.
+Leptos and Trunk are no longer used. Topcoat's server, router, and runtime features
+are disabled: there are no server endpoints or server-backed interactions.
+
+Topcoat 0.8.1 does not yet provide a built-in static export command, so
+`cargo run -- dist` renders its `view!` template to `dist/index.html`.
+Re-run the three build commands above after changing the sources, then reload.
+Serve or upload the resulting `dist` directory as-is. Relative asset URLs work
+both at the domain root and under `/tusk/` on GitHub Pages; no base URL is needed.
+The reader still needs HTTPS (or localhost) for WebHID and clipboard access.
+This is a Topcoat static-template experiment, not a migration to its reactive runtime.
+
+### Reader protocol
 
 Messages are framed, checksummed, and XOR-obfuscated with a repeating key:
 
@@ -102,7 +120,7 @@ cargo test   # protocol and token decoding, on the host
 cargo w      # the polling loop, in headless Chrome against a fake reader
 ```
 
-`cargo w` is an alias for `cargo test --target wasm32-unknown-unknown`; see
+`cargo w` is an alias for `cargo test --lib --target wasm32-unknown-unknown`; see
 [CONTRIBUTING.md](CONTRIBUTING.md) for what it needs. The host is the default
 target, so `cargo test` works on any machine without naming a triple.
 
@@ -114,8 +132,9 @@ documented.
 
 [CI](.github/workflows/ci.yml) runs on every push and pull request: `cargo fmt
 --check`, clippy with warnings as errors on both the wasm target and the host,
-and both sets of tests. Each push to `master` that passes is built with Trunk and
-published to GitHub Pages.
+and both sets of tests. The build renders the page with Topcoat, packages the
+WebAssembly module with wasm-bindgen, and smoke-tests the exported site under a
+repository subpath. Each push to `master` that passes is published to GitHub Pages.
 
 ## Project layout
 
@@ -124,9 +143,13 @@ published to GitHub Pages.
 | `src/protocol.rs` | Building command frames and parsing replies |
 | `src/token.rs` | Turning a read reply into the Net2 token number |
 | `src/reader.rs` | WebHID connection and the polling loop |
-| `src/app.rs` | The page itself |
+| `src/app.rs` | Topcoat page template and icons |
+| `src/main.rs` | Static HTML exporter |
+| `src/client.rs` | Browser controls and DOM updates |
+| `src/lib.rs` | Shared protocol library and WebAssembly entry point |
 | `PROTOCOL.md` | The reverse-engineered protocol |
-| `index.html` | Page shell and styling |
+| `src/style.css` | Page styling |
+| `tests/static_site.py` | Exported-site browser smoke test |
 | `.cargo/config.toml` | Unstable WebHID bindings, browser-test alias |
 
 ## Licence
