@@ -30,10 +30,14 @@ and ignored by Git. There is no application server to deploy.
 ## Running the tests
 
 ```sh
-cargo test   # protocol and token decoding, on the host
+cargo test   # protocol, token decoding, and the CSV assignment queue
 cargo w      # the polling loop, in headless Chrome
 python tests/static_site.py  # after building dist; needs Chrome and chromedriver
 ```
+
+The static-site test also uploads the supplied Net2 sample in
+`tests/fixtures/net2-import.csv`, verifies decimal/hex downloads, and checks
+desktop/mobile layouts. Screenshots are saved under `target/batch-*.png`.
 
 The host is the default target, so `cargo test` needs no triple and works
 wherever you are. `cargo w` is an alias for

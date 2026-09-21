@@ -8,6 +8,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::{HidDevice, HidInputReportEvent};
 
 use crate::{
+    batch::Batch,
     protocol::{ACK, ADDR, INIT, LEDS_ARG, OP_LEDS, REPORT_BYTES, frame, is_read_reply, parse},
     token::{Read, Token, token},
 };
@@ -42,6 +43,10 @@ pub struct State {
     pub status: (Tone, String),
     pub link: Link,
     pub copied: String,
+    pub batch: Option<Batch>,
+    pub batch_filename: String,
+    pub batch_error: String,
+    pub batch_mode: bool,
     pub on_change: fn(&Self),
 }
 
@@ -52,6 +57,10 @@ impl Default for State {
             status: (Tone::Idle, "Not connected".into()),
             link: Link::default(),
             copied: String::new(),
+            batch: None,
+            batch_filename: String::new(),
+            batch_error: String::new(),
+            batch_mode: false,
             on_change: |_| {},
         }
     }
@@ -60,11 +69,19 @@ impl Default for State {
 impl State {
     pub fn say(&mut self, tone: Tone, message: impl Into<String>) {
         self.status = (tone, message.into());
+        if tone != Tone::Ready
+            && let Some(batch) = &mut self.batch
+        {
+            batch.running = false;
+        }
         (self.on_change)(self);
     }
 
     pub fn show(&mut self, card: Option<Token>) {
         if self.card != card {
+            if let Some(batch) = &mut self.batch {
+                batch.observe(card.as_ref());
+            }
             self.copied.clear();
             self.card = card;
             (self.on_change)(self);

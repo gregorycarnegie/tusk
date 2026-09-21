@@ -80,6 +80,35 @@ so reloading reconnects without a prompt. After unplugging it, click **Connect
 reader** again: the reader has no USB serial number, so Chrome forgets the
 permission when it is unplugged and the page cannot reconnect by itself.
 
+## Assign a batch of cards
+
+Open **Batch assign cards** (or `/#batch` locally and `/tusk/#batch` on Pages).
+
+1. Connect the reader and choose a Net2 import **CSV UTF-8** file with
+   `First name`, `Surname`, and `Card Number` columns.
+2. Existing card numbers are kept by default. To reissue cards, select
+   **Replace existing card numbers** before loading the file.
+3. Leave the format on **Net2 decimal**, or select **Raw card hex** before
+   assigning the first card. Decimal uses the same Net2 conversion as the reader;
+   hex writes the full raw hex shown by the reader. Other CSV values are unchanged.
+4. Press **Start / resume**, then tap the named person's card. Wait for the
+   assignment to appear before moving to the next card. A held card is accepted
+   once; cards already used elsewhere in the batch are refused.
+5. Use **Skip person** for an absent student, **Undo last step** to correct a
+   mistake, and **Download CSV** to save the result for Net2's import wizard.
+
+Download works before the queue is complete, so you can save progress. The file
+keeps its columns, order, leading zeros, Unicode, quoted/multiline fields, and
+trailing empty fields; only newly assigned `Card Number` values change. CSV
+quoting is normalized and rows use CRLF. Skipped/unassigned people retain their
+original values. Reopen a partial download with replacement off to fill remaining
+empty card numbers. The tool accepts up to 10 MB and 10,000 people per file.
+
+Processing stays in the browser. The batch pauses on reader problems or when
+switching back to **Read a card**. Unsaved work triggers a leave-page warning;
+there is no persistent storage, so download regularly before closing the tab.
+Hitag2 decoding remains beta and should be checked against Net2 on real fobs.
+
 ## How it works
 
 Topcoat renders the complete HTML page at build time. The browser loads a small
@@ -146,6 +175,8 @@ repository subpath. Each push to `master` that passes is published to GitHub Pag
 | `src/app.rs` | Topcoat page template and icons |
 | `src/main.rs` | Static HTML exporter |
 | `src/client.rs` | Browser controls and DOM updates |
+| `src/batch.rs` | CSV preservation, assignment queue, and duplicate checks |
+| `src/batch_client.rs` | Batch upload, guided prompts, review, and download |
 | `src/lib.rs` | Shared protocol library and WebAssembly entry point |
 | `PROTOCOL.md` | The reverse-engineered protocol |
 | `src/style.css` | Page styling |

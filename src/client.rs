@@ -10,7 +10,7 @@ use crate::{
     token::Read,
 };
 
-fn element(id: &str) -> HtmlElement {
+pub(crate) fn element(id: &str) -> HtmlElement {
     web_sys::window()
         .unwrap()
         .document()
@@ -20,7 +20,7 @@ fn element(id: &str) -> HtmlElement {
         .unchecked_into()
 }
 
-fn render(state: &State) {
+pub(crate) fn render(state: &State) {
     let tone = match state.status.0 {
         Tone::Idle => "idle",
         Tone::Busy => "busy",
@@ -63,12 +63,13 @@ fn render(state: &State) {
             )
             .unwrap();
     }
+    crate::batch_client::render(state);
 }
 
-fn on_click(id: &str, f: impl FnMut() + 'static) {
+pub(crate) fn on_click(id: &str, f: impl FnMut() + 'static) {
     let callback = Closure::<dyn FnMut()>::new(f);
     element(id).set_onclick(Some(callback.as_ref().unchecked_ref()));
-    // These four controls live for the lifetime of the page.
+    // These controls live for the lifetime of the page.
     callback.forget();
 }
 
@@ -79,6 +80,7 @@ pub fn start() {
         on_change: render,
         ..State::default()
     }));
+    crate::batch_client::setup(state.clone());
     render(&state.borrow());
     on_click("theme", toggle_theme);
     for (id, number) in [("copy-number", true), ("copy-hex", false)] {

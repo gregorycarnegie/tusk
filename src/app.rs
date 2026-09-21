@@ -37,9 +37,17 @@ fn page(cx: &Cx) -> impl View {
             </nav>
         </header>
         <main>
-            <section class="intro">
+            <nav class="tool-nav" aria-label="Tools">
+                <a id="reader-tab" href="#reader" aria-current="page">"Read a card"</a>
+                <a id="batch-tab" href="#batch">"Batch assign cards"</a>
+            </nav>
+            <section id="reader-intro" class="intro">
                 <h1>"Read Net2 tokens in your browser"</h1>
                 <p>"Plug in a Paxton Net2 USB desktop reader, connect it, and present a card. No drivers or Net2 software needed."</p>
+            </section>
+            <section id="batch-intro" class="intro" hidden="">
+                <h1>"A card for every name"</h1>
+                <p>"Load your Net2 import CSV, tap each person’s card, and download the completed file."</p>
             </section>
             <section class="panel">
                 <div class="panel-head">
@@ -71,6 +79,7 @@ fn page(cx: &Cx) -> impl View {
                     </div>
                 </div>
             </section>
+            batch_tool()
             <noscript>"Enable JavaScript to connect to the reader."</noscript>
         </main>
         <footer>
@@ -87,6 +96,56 @@ fn page(cx: &Cx) -> impl View {
         </body>
         </html>
     }
+}
+
+#[component]
+async fn batch_tool() -> topcoat::Result<impl View> {
+    Ok(view! {
+        <section id="batch-tool" hidden="" aria-label="Batch card assignment">
+            <div class="batch-setup panel">
+                <label for="batch-file">"1. Choose your Net2 CSV"</label>
+                <input id="batch-file" type="file" accept=".csv,text/csv">
+                <p class="hint">"Needs First name, Surname and Card Number columns. All other fields are preserved. Your file stays in this browser."</p>
+                <label class="checkbox"><input id="batch-replace" type="checkbox">"Replace existing card numbers in the next file I load"</label>
+                <label for="batch-format">"Card number format"</label>
+                <select id="batch-format">
+                    <option value="decimal" selected="">"Net2 decimal (recommended)"</option>
+                    <option value="hex">"Raw card hex"</option>
+                </select>
+                <p class="hint">"Format applies to newly scanned cards. Choose it before assigning the first card; existing values are kept as supplied."</p>
+                <p id="batch-error" class="error" role="alert" hidden=""></p>
+            </div>
+            <div id="batch-session" hidden="">
+                <div class="batch-task panel">
+                    <p id="batch-file-name" class="hint"></p>
+                    <p id="batch-progress" class="label"></p>
+                    <h2 id="batch-prompt" aria-live="polite"></h2>
+                    <p id="batch-notice" role="status"></p>
+                    <div class="actions">
+                        <button id="batch-start" class="primary">"Start / resume"</button>
+                        <button id="batch-pause" class="secondary">"Pause"</button>
+                        <button id="batch-skip" class="secondary">"Skip person"</button>
+                        <button id="batch-undo" class="secondary">"Undo last step"</button>
+                    </div>
+                    <p class="hint">"One card per person. Leave each card on the reader until its assignment appears. Duplicate cards are refused."</p>
+                    <p class="beta-note shown">"Hitag2 fobs are still beta: verify their numbers against Net2."</p>
+                </div>
+                <div class="batch-review panel">
+                    <div class="panel-head">
+                        <h2>"Review assignments"</h2>
+                        <button id="batch-download" class="primary">"Download CSV"</button>
+                    </div>
+                    <p class="hint">"You can download progress at any time. Skipped and unassigned people keep their original values. Reopen the downloaded CSV to continue with empty card numbers."</p>
+                    <div class="table-scroll" tabindex="0" role="region" aria-label="Assignments">
+                        <table>
+                            <thead><tr><th scope="col">"CSV row"</th><th scope="col">"Name"</th><th scope="col">"Card Number"</th><th scope="col">"Status"</th></tr></thead>
+                            <tbody id="batch-rows"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+    })
 }
 
 #[component]

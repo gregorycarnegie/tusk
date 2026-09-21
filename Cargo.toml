@@ -14,6 +14,9 @@ crate-type = ["cdylib", "rlib"]
 name = "tusk-site"
 path = "src/main.rs"
 
+[dependencies]
+csv = "1.4"
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 topcoat = { version = "0.8.1", default-features = false, features = ["view"] }
 futures-executor = "0.3"
@@ -28,6 +31,15 @@ web-sys = { version = "0.3", features = [
     "Element",
     "HtmlElement",
     "HtmlButtonElement",
+    "HtmlInputElement",
+    "HtmlSelectElement",
+    "HtmlAnchorElement",
+    "File",
+    "FileList",
+    "Blob",
+    "BlobPropertyBag",
+    "Url",
+    "BeforeUnloadEvent",
     "MediaQueryList",
     "Storage",
     "Hid",
@@ -42,6 +54,7 @@ web-sys = { version = "0.3", features = [
     "HidInputReportEvent",
     "Navigator",
     "Window",
+    "Location",
 ] }
 
 # Host tests: `cargo test`. proptest does not build for wasm32.

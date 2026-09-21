@@ -118,3 +118,28 @@
     [hidden] { display: none !important; }
     .copy-done, [data-copied="true"] .copy-normal { display: none; }
     [data-copied="true"] .copy-done { display: inline; }
+
+    .tool-nav { margin-top: .5rem; gap: .5rem; flex-wrap: wrap; }
+    .tool-nav a { padding: .5rem .85rem; border-radius: 999px; color: var(--muted); text-decoration: none; font-weight: 600; }
+    .tool-nav a[aria-current="page"] { background: var(--accent); color: var(--on-accent); }
+    #batch-tool { margin-top: 1rem; }
+    .batch-setup, .batch-task { padding: 1.25rem; margin-bottom: 1rem; }
+    .batch-setup label { display: block; font-weight: 600; margin-bottom: .5rem; }
+    .batch-setup input[type="file"], .batch-setup select { max-width: 100%; font: inherit; margin-bottom: .5rem; }
+    .batch-setup select { display: block; width: 100%; padding: .65rem; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; }
+    .batch-setup .checkbox { display: flex; align-items: baseline; gap: .6rem; margin: 1rem 0; font-weight: 400; }
+    .hint { color: var(--muted); font-size: .9rem; margin: .5rem 0; }
+    .error { color: var(--problem); font-weight: 600; }
+    .batch-task { text-align: center; background: var(--sunken); }
+    .batch-task h2 { color: var(--accent); font-size: clamp(1.6rem, 5vw, 2.2rem); line-height: 1.2; overflow-wrap: anywhere; margin: 1rem 0; }
+    #batch-notice { min-height: 3rem; }
+    button.primary:disabled { opacity: .45; cursor: default; }
+    .batch-review h2 { font-size: 1.15rem; margin: 0; }
+    .batch-review > .hint { padding: .75rem 1.25rem; margin: 0; }
+    .table-scroll { overflow: auto; max-height: 26rem; }
+    table { width: 100%; min-width: 32rem; border-collapse: collapse; text-align: left; font-size: .9rem; }
+    th, td { padding: .65rem .85rem; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+    th { position: sticky; top: 0; background: var(--surface); }
+    .current-person { background: color-mix(in srgb, var(--brand) 12%, var(--surface)); }
+    #batch-file-name { overflow-wrap: anywhere; }
+    @media (max-width: 450px) { .batch-task .actions { flex-direction: column; align-items: stretch; } .batch-task button { justify-content: center; } }

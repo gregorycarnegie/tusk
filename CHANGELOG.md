@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Guided CSV card assignment: prompt for each person's card, advance after a new
+  tap, and download a Net2 import CSV. Decimal is the default; raw hex is optional.
+- Preserve existing card numbers unless replacement is selected, refuse duplicate
+  cards, and support pause, skip, undo, partial downloads, and an unsaved-work warning.
+
 ### Changed
 
 - Replace the Leptos UI with a Topcoat page rendered at build time. Keep the
