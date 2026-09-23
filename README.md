@@ -136,8 +136,11 @@ You need:
   Net2 server itself, `https://localhost:8443` works. Chrome may also ask to
   let the page reach devices on your local network; allow it.
 
-**Portraits.** Name each JPG or PNG with the person's Net2 user ID
-(`12345.jpg`, no leading zeros, at most 3.5 MB and 40 megapixels). Choose the
+**Portraits.** Name each photo with the person's Net2 user ID (`12345.jpg`,
+no leading zeros). A JPG or PNG of up to 3.5 MB and 40 megapixels is uploaded
+exactly as it is. Anything else the browser can open (WebP, GIF, BMP, AVIF, or
+a photo that is too big) is converted in the browser to a JPG, at most 1200
+pixels on its longest side, and the table says so. Choose the
 files, press **Check matches**, and compare every name with its photo. People
 who already have a portrait are skipped unless you tick **Replace portraits
 people already have**. **Upload portraits** asks for confirmation; each upload

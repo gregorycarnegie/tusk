@@ -102,7 +102,16 @@ Tusk reads Mifare and, in beta, Hitag2.
 
 ### Mifare
 
-The payload is the UID followed by zero padding; all zeros means no card.
+With a card present the reply is an ack whose payload is the UID followed by
+zero padding. With no card it is not an ack at all: it is type `0x12` with the
+single byte `01`. (A Hitag2 read with no fob gets `0x12 28`.) This document
+used to say an all-zero ack meant no card; net2.pcap and the live reader both
+show `0x12 01`, in 47 of 47 empty reads.
+
+Replies are in order but slow. An empty Mifare read is answered after the next
+read has already been sent, so a reply must be credited to the oldest read still
+waiting, not the latest one. Crediting the latest kept a lifted card on screen
+for ever. `0x12 01` and `0x12 28` name their read, which also resyncs the queue.
 Net2's token number is the first four bytes as a big-endian integer, keeping
 the last eight decimal digits:
 
@@ -156,7 +165,7 @@ BOARD_CMD enum where it has one.
     0xA8  RWD_READ_HITAG_1
     0xC7  RWD_READ_EM4100
     0xC8  RWD_TURN_OFF_ON_FIELD
-    0xD7  RWD_READ_MIFARE        ack, UID then zero padding
+    0xD7  RWD_READ_MIFARE        ack, UID then zero padding; no card: 0x12 01
     0xD8  RWD_READ_HID
     most others                  0x12, no such command
 

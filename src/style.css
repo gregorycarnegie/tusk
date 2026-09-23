@@ -158,5 +158,6 @@
     #batch-net2 label { margin-top: .5rem; }
     .notice { text-align: center; margin: 1rem 0 0; }
     #portrait-rows img { width: 3rem; height: 3rem; object-fit: cover; border-radius: 6px; vertical-align: middle; margin-right: .5rem; }
+    small.converted { display: block; color: var(--muted); margin-top: .2rem; }
     td.problem { color: var(--problem); font-weight: 600; }
     td.done { color: var(--accent); font-weight: 600; }

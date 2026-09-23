@@ -9,3 +9,4 @@
 
 # cargo-mutants runs
 mutants.out*/
+/test-faces

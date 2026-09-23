@@ -26,6 +26,12 @@ const OBFUSCATION_KEY: [u8; 8] = *b"Elephant";
 /// Decoded reply type: the reader understood and answered.
 pub const ACK: u8 = 0x10;
 
+/// A read found nothing; the one payload byte says which kind of read.
+/// Net2's reads for 125 kHz tokens share 0x28.
+pub const NO_TOKEN: u8 = 0x12;
+pub const NO_MIFARE: u8 = 0x01;
+pub const NO_HITAG2: u8 = 0x28;
+
 /// "I did not understand", echoing our own bytes back. Sent unobfuscated even
 /// when the address asks for obfuscation, so it is read straight off the wire.
 const NAK: u8 = 0x13;

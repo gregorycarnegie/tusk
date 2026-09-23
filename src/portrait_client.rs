@@ -9,11 +9,16 @@ use std::{
 use serde_json::json;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
-use web_sys::{File, FileReader, HtmlButtonElement, HtmlInputElement, Url};
+use web_sys::{
+    Blob, CanvasRenderingContext2d, File, FileReader, HtmlButtonElement, HtmlCanvasElement,
+    HtmlInputElement, ImageBitmap, Url,
+};
 
 use crate::{
     client::{element, on_click},
-    net2::{User, check_portrait, duplicate_flags, portrait_user_id, read_user},
+    net2::{
+        MAX_IMAGE_BYTES, User, check_portrait, duplicate_flags, fit, portrait_user_id, read_user,
+    },
     net2_client::call,
     reader::{State, Tool},
 };
@@ -26,8 +31,11 @@ const PACE_MS: i32 = 600;
 struct Row {
     filename: String,
     id: Option<i32>,
-    /// Read again at upload, so a large batch is not held in memory.
-    file: File,
+    /// What is uploaded: the chosen file, read again at upload so a large
+    /// batch is not held in memory, or the JPEG it was converted to.
+    image: Blob,
+    /// How the image was changed on the way, if it was.
+    note: Option<String>,
     preview: Option<String>,
     user: Option<User>,
     status: String,
@@ -159,8 +167,53 @@ async fn header(file: &File) -> Option<Vec<u8>> {
     Some(js_sys::Uint8Array::new(&buffer).to_vec())
 }
 
+/// Redraw any image the browser can decode as a JPEG no larger than
+/// `MAX_EDGE` on its longest side, upright and on white.
+async fn convert(file: &File) -> Result<(Blob, String), String> {
+    let unreadable = || "This browser cannot open this image. Save it as a JPG and try again.";
+    let decoding = web_sys::window()
+        .unwrap()
+        .create_image_bitmap_with_blob(file)
+        .map_err(|_| unreadable())?;
+    let bitmap: ImageBitmap = JsFuture::from(decoding)
+        .await
+        .map_err(|_| unreadable())?
+        .unchecked_into();
+    let (width, height) = fit(bitmap.width(), bitmap.height());
+    let document = web_sys::window().unwrap().document().unwrap();
+    let canvas: HtmlCanvasElement = document.create_element("canvas").unwrap().unchecked_into();
+    canvas.set_width(width);
+    canvas.set_height(height);
+    let context: CanvasRenderingContext2d = canvas
+        .get_context("2d")
+        .ok()
+        .flatten()
+        .ok_or_else(unreadable)?
+        .unchecked_into();
+    // JPEG has no transparency; without this a transparent PNG turns black.
+    context.set_fill_style_str("#fff");
+    context.fill_rect(0.0, 0.0, width.into(), height.into());
+    context
+        .draw_image_with_image_bitmap_and_dw_and_dh(&bitmap, 0.0, 0.0, width.into(), height.into())
+        .map_err(|_| unreadable())?;
+    bitmap.close();
+    let encoded = js_sys::Promise::new(&mut |resolve, _| {
+        let _ = canvas.to_blob_with_type_and_encoder_options(&resolve, "image/jpeg", &0.9.into());
+    });
+    let blob: Blob = JsFuture::from(encoded)
+        .await
+        .ok()
+        .filter(|blob| !blob.is_null())
+        .ok_or_else(unreadable)?
+        .unchecked_into();
+    if blob.size() as usize > MAX_IMAGE_BYTES {
+        return Err("Even after shrinking, this image is too large for Net2.".into());
+    }
+    Ok((blob, format!("Converted to JPG, {width}×{height}")))
+}
+
 /// The browser's own base64, by way of a data URL.
-async fn base64(file: &File) -> Option<String> {
+async fn base64(file: &Blob) -> Option<String> {
     let reader = FileReader::new().ok()?;
     let loaded = js_sys::Promise::new(&mut |resolve, reject| {
         reader.set_onload(Some(&resolve));
@@ -189,31 +242,40 @@ async fn choose(state: Rc<RefCell<State>>) {
     });
     let mut rows = Vec::with_capacity(files.len());
     for file in files {
-        let filename = file.name();
         let mut row = Row {
+            filename: file.name(),
             id: None,
+            image: file.clone().into(),
+            note: None,
             preview: None,
             user: None,
             status: "Not checked".into(),
             problem: false,
             done: false,
             unsure: false,
-            filename,
-            file,
         };
         match portrait_user_id(&row.filename) {
             Ok(id) => row.id = Some(id),
             Err(message) => row.fail(message),
         }
         if row.id.is_some() {
-            match header(&row.file).await {
-                Some(bytes) => {
-                    match check_portrait(&row.filename, &bytes, row.file.size() as usize) {
-                        Ok(()) => row.preview = Url::create_object_url_with_blob(&row.file).ok(),
-                        Err(message) => row.fail(message),
+            // A JPG or PNG Net2 accepts goes up untouched; anything else is
+            // converted, so the operator never has to.
+            let as_is = match header(&file).await {
+                Some(bytes) => check_portrait(&row.filename, &bytes, file.size() as usize).is_ok(),
+                None => false,
+            };
+            if !as_is {
+                match convert(&file).await {
+                    Ok((image, note)) => {
+                        row.image = image;
+                        row.note = Some(note);
                     }
+                    Err(message) => row.fail(message),
                 }
-                None => row.fail("The image could not be read."),
+            }
+            if !row.problem {
+                row.preview = Url::create_object_url_with_blob(&row.image).ok();
             }
         }
         rows.push(row);
@@ -240,6 +302,12 @@ async fn choose(state: Rc<RefCell<State>>) {
         let name = document.create_element("span").unwrap();
         name.set_text_content(Some(&row.filename));
         first.append_child(&name).unwrap();
+        if let Some(note) = &row.note {
+            let hint = document.create_element("small").unwrap();
+            hint.set_class_name("converted");
+            hint.set_text_content(Some(note));
+            first.append_child(&hint).unwrap();
+        }
         tr.append_child(&first).unwrap();
         let id = document.create_element("td").unwrap();
         id.set_text_content(Some(&row.id.map_or("—".into(), |id| id.to_string())));
@@ -312,25 +380,25 @@ async fn review(state: Rc<RefCell<State>>) {
 async fn upload(state: Rc<RefCell<State>>, replace: bool) {
     BUSY.set(true);
     STOP.set(false);
-    let todo: Vec<(usize, i32, String, File)> = ROWS.with_borrow(|rows| {
+    let todo: Vec<(usize, i32, String, Blob)> = ROWS.with_borrow(|rows| {
         rows.iter()
             .enumerate()
             .filter(|(_, row)| row.ready(replace))
             .filter_map(|(index, row)| {
-                Some((index, row.id?, row.user.as_ref()?.name(), row.file.clone()))
+                Some((index, row.id?, row.user.as_ref()?.name(), row.image.clone()))
             })
             .collect()
     });
     let mut uploaded = 0;
     let mut halted = false;
-    for (position, (index, id, checked_name, file)) in todo.iter().enumerate() {
+    for (position, (index, id, checked_name, image)) in todo.iter().enumerate() {
         if STOP.get() {
             halted = true;
             break;
         }
         notice(&format!("Uploading {} of {}…", position + 1, todo.len()));
         let outcome = async {
-            let data = base64(file).await.ok_or_else(|| {
+            let data = base64(image).await.ok_or_else(|| {
                 crate::net2::failure("This image could not be read.", false, false)
             })?;
             let body = call(&state, "GET", &format!("/users/{id}"), None).await?;

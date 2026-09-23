@@ -29,6 +29,8 @@ pub const DEFAULT_TOKEN_TYPE: &str = "ProxIsoCardWithoutMagstripe";
 
 pub const MAX_IMAGE_BYTES: usize = 3 * 1024 * 1024 + 512 * 1024;
 pub const MAX_PIXELS: u64 = 40_000_000;
+/// The longest side of a photo Tusk converts. Plenty for an ID card.
+pub const MAX_EDGE: u32 = 1200;
 
 /// A refusal by Net2, or no answer at all.
 #[derive(Clone, Debug, PartialEq)]
@@ -216,22 +218,19 @@ const NAME_RULE: &str =
 
 /// The filename is the only link between a portrait and a person, so anything
 /// ambiguous is rejected rather than guessed at. `00123.jpg` would otherwise
-/// silently be the same person as `123.jpg`.
+/// silently be the same person as `123.jpg`. Any extension is accepted:
+/// whether the browser can decode the contents is found out when reading it.
 pub fn portrait_user_id(filename: &str) -> Result<i32, String> {
-    let (stem, extension) = filename.rsplit_once('.').ok_or(NAME_RULE)?;
-    if !matches!(
-        extension.to_ascii_lowercase().as_str(),
-        "jpg" | "jpeg" | "png"
-    ) || stem.is_empty()
-        || stem.starts_with('0')
-        || !stem.bytes().all(|byte| byte.is_ascii_digit())
-    {
+    let (stem, _) = filename.rsplit_once('.').ok_or(NAME_RULE)?;
+    if stem.is_empty() || stem.starts_with('0') || !stem.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(NAME_RULE.into());
     }
     stem.parse::<i32>().map_err(|_| NAME_RULE.into())
 }
 
-/// `header` need only be the first few kilobytes; `size` is the whole file.
+/// Whether the file can go to Net2 exactly as it is; anything else is
+/// converted. `header` need only be the first few kilobytes; `size` is the
+/// whole file.
 pub fn check_portrait(filename: &str, header: &[u8], size: usize) -> Result<(), String> {
     if size == 0 || size > MAX_IMAGE_BYTES {
         return Err("Images must be no larger than 3.5 MB.".into());
@@ -251,6 +250,19 @@ pub fn check_portrait(filename: &str, header: &[u8], size: usize) -> Result<(), 
         Ok(_) => Ok(()),
         Err(_) => Err("The image size could not be read.".into()),
     }
+}
+
+/// The size to redraw a photo at: its own, or scaled down so the longest side
+/// is `MAX_EDGE`. Never enlarged.
+pub fn fit(width: u32, height: u32) -> (u32, u32) {
+    let longest = width.max(height);
+    if longest <= MAX_EDGE {
+        return (width, height);
+    }
+    let scale = |side: u32| {
+        ((side as u64 * MAX_EDGE as u64 + longest as u64 / 2) / longest as u64).max(1) as u32
+    };
+    (scale(width), scale(height))
 }
 
 /// True for every copy of an ID that appears more than once.
@@ -340,12 +352,12 @@ mod tests {
     fn portraits_need_an_unambiguous_id_and_honest_contents() {
         assert_eq!(portrait_user_id("12345.JPG"), Ok(12345));
         assert_eq!(portrait_user_id("7.jpeg"), Ok(7));
+        assert_eq!(portrait_user_id("8.webp"), Ok(8));
         for bad in [
             "00123.jpg",
             "0.jpg",
             "2147483648.jpg",
             "person.jpg",
-            "24.svg",
             "12345",
             "12 345.jpg",
             "-1.jpg",
@@ -358,6 +370,10 @@ mod tests {
         assert!(check_portrait("1.png", &[0xFF, 0xD8, 0xFF], 3).is_err());
         assert!(check_portrait("1.png", &png, 0).is_err());
         assert!(check_portrait("1.png", &png, MAX_IMAGE_BYTES + 1).is_err());
+        assert_eq!(fit(1024, 1024), (1024, 1024));
+        assert_eq!(fit(4000, 3000), (1200, 900));
+        assert_eq!(fit(3000, 4001), (900, 1200));
+        assert_eq!(fit(20000, 5), (1200, 1));
         assert_eq!(
             duplicate_flags(&[Some(1), Some(2), Some(1), None, None]),
             [true, false, true, false, false]

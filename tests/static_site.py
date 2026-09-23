@@ -298,23 +298,35 @@ def main():
             sign_in('right')
             wait("document.getElementById('net2-message').textContent === 'Connected to https://net2.test'")
             assert js("return document.getElementById('net2-form').hidden")
+            # A wide WebP must be converted and shrunk; junk named like an image refused.
+            js("""const canvas = document.createElement('canvas');
+                  canvas.width = 3000; canvas.height = 600;
+                  canvas.getContext('2d').fillRect(0, 0, 100, 100);
+                  canvas.toBlob(blob => window.webp = blob, 'image/webp');""")
+            wait('window.webp')
             js(f"""
                 const png = new Uint8Array({PNG}), transfer = new DataTransfer();
                 for (const name of ['7.png', '8.png', '007.png']) transfer.items.add(new File([png], name));
+                transfer.items.add(new File([webp], '12.webp'));
+                transfer.items.add(new File(['not an image'], '9.jpg'));
                 const input = document.getElementById('portrait-files');
                 input.files = transfer.files;
                 input.dispatchEvent(new Event('change'));
             """)
-            wait("document.querySelectorAll('#portrait-rows tr').length === 3 && !document.getElementById('portrait-review').disabled")
-            assert js("return document.querySelector('#portrait-rows tr:nth-child(3) .problem') !== null")
+            wait("document.querySelectorAll('#portrait-rows tr').length === 5 && !document.getElementById('portrait-review').disabled")
+            assert js("return [...document.querySelectorAll('#portrait-rows tr')].map(r => !!r.querySelector('.problem'))") == [False, False, True, False, True]
+            assert js("return document.querySelector('#portrait-rows tr:nth-child(4) .converted').textContent") == 'Converted to JPG, 1200×240'
+            assert 'cannot open' in js("return document.querySelector('#portrait-rows tr:nth-child(5) .problem').textContent")
             js("document.getElementById('portrait-review').click()")
             wait("document.getElementById('portrait-notice').textContent.startsWith('Checked')")
             assert js("return document.querySelector('#portrait-rows tr td:nth-child(3)').textContent === 'Ada Lovelace'")
-            assert js("return document.getElementById('portrait-upload').textContent === 'Upload 1 portrait'")
+            assert js("return document.getElementById('portrait-upload').textContent === 'Upload 2 portraits'")
             js("document.getElementById('portrait-upload').click()")
-            wait("document.getElementById('portrait-notice').textContent.startsWith('Done. 1 of 1')")
-            assert js("return Object.keys(net2.images).join() === '7'")
+            wait("document.getElementById('portrait-notice').textContent.startsWith('Done. 2 of 2')")
+            assert js("return Object.keys(net2.images).join() === '7,12'")
+            # Within Net2's limits the file goes up byte for byte; the WebP as a JPEG.
             assert js("return net2.images[7]") == base64.b64encode(bytes(PNG)).decode()
+            assert js("return net2.images[12]").startswith('/9j/')
 
             js("""location.hash = 'batch';
                   const source = document.getElementById('batch-source');
@@ -366,7 +378,7 @@ def main():
             wait("document.getElementById('message').textContent.startsWith('WebHID is not available')")
             assert js("return document.getElementById('connect').disabled")
             assert js('return errors') == []
-            print('Static site smoke test passed: reader, batch upload, sequential taps, duplicate guard, pause, skip/undo, CSV preservation, decimal/hex downloads, Net2 sign-in, portrait upload, direct card saving, and no WebHID.')
+            print('Static site smoke test passed: reader, batch upload, sequential taps, duplicate guard, pause, skip/undo, CSV preservation, decimal/hex downloads, Net2 sign-in, portrait upload and conversion, direct card saving, and no WebHID.')
         finally:
             try:
                 if session:

@@ -210,8 +210,8 @@ async fn portrait_tool() -> topcoat::Result<impl View> {
         <section id="portrait-tool" hidden="" aria-label="Portrait upload">
             <div class="batch-setup panel">
                 <label for="portrait-files">"Choose portraits"</label>
-                <input id="portrait-files" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" multiple="">
-                <p class="hint">"Name each file with the person’s Net2 user ID, like 12345.jpg. JPG or PNG, up to 3.5 MB each. Not a personnel or card number."</p>
+                <input id="portrait-files" type="file" accept="image/*" multiple="">
+                <p class="hint">"Name each file with the person’s Net2 user ID, like 12345.jpg: not a personnel or card number. Any photo this browser can open works; big photos are shrunk and other formats converted to JPG."</p>
                 <label class="checkbox"><input id="portrait-replace" type="checkbox">"Replace portraits people already have"</label>
                 <div class="actions">
                     <button id="portrait-review" class="secondary">"Check matches"</button>

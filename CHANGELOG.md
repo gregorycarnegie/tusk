@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-23
+
+### Fixed
+
+- A card lifted off the reader stayed on screen, and in batch mode a card on
+  the reader at Start was never released. The reader answers an empty Mifare
+  read late, after the next read has gone out, and Tusk credited each reply to
+  the latest read. Replies are now matched to reads in order. Found with a live
+  log of the reader: its "no card" reply is `0x12 01`, not the all-zero ack
+  PROTOCOL.md described.
+
+### Changed
+
+- Portraits in any format the browser can open are accepted. A JPG or PNG
+  within Net2's limits still uploads unchanged; anything else, or anything too
+  big, is converted in the browser to a JPG of at most 1200 pixels on its
+  longest side, upright and with transparency on white.
+
+### Verification
+
+- Tested against a real Net2 with a real reader: 20 Mifare cards saved straight
+  to Net2 users with the chosen card type, and 20 portraits uploaded, including
+  a WebP that was converted. This settles 0.4.0's known issue about untested
+  saves and uploads. MFA sign-in and Hitag2 fobs remain untested.
+
 ## [0.4.0] - 2026-09-23
 
 ### Added
@@ -188,7 +213,8 @@ because each was a wrong assumption worth remembering:
   reports.
 - Tokens are assumed to be 4 to 8 bytes. Longer ones would be ignored.
 
-[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/gregorycarnegie/tusk/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/gregorycarnegie/tusk/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/gregorycarnegie/tusk/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/gregorycarnegie/tusk/compare/v0.2.1...v0.2.2
