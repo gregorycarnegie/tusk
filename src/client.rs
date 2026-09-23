@@ -21,13 +21,9 @@ pub(crate) fn element(id: &str) -> HtmlElement {
 }
 
 pub(crate) fn render(state: &State) {
-    let tone = match state.status.0 {
-        Tone::Idle => "idle",
-        Tone::Busy => "busy",
-        Tone::Ready => "ready",
-        Tone::Problem => "problem",
-    };
-    element("status").set_attribute("data-tone", tone).unwrap();
+    element("status")
+        .set_attribute("data-tone", state.status.0.name())
+        .unwrap();
     element("message").set_text_content(Some(&state.status.1));
     let card = state.card.as_ref();
     let beta = card.is_some_and(|t| t.read == Read::Hitag2);
@@ -64,6 +60,8 @@ pub(crate) fn render(state: &State) {
             .unwrap();
     }
     crate::batch_client::render(state);
+    crate::net2_client::render(state);
+    crate::portrait_client::render(state);
 }
 
 pub(crate) fn on_click(id: &str, f: impl FnMut() + 'static) {
@@ -80,6 +78,8 @@ pub fn start() {
         on_change: render,
         ..State::default()
     }));
+    crate::net2_client::setup(state.clone());
+    crate::portrait_client::setup(state.clone());
     crate::batch_client::setup(state.clone());
     render(&state.borrow());
     on_click("theme", toggle_theme);

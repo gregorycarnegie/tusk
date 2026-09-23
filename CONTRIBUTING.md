@@ -11,10 +11,10 @@ cargo install wasm-bindgen-cli --version 0.2.128 --locked
 cargo run --locked -- dist
 cargo build --locked --release --lib --target wasm32-unknown-unknown
 wasm-bindgen --target web --no-typescript --out-dir dist target/wasm32-unknown-unknown/release/tusk.wasm
-python -m http.server 8080 --directory dist --bind 127.0.0.1
+python -m http.server 8000 --directory dist --bind 127.0.0.1
 ```
 
-Then open <http://127.0.0.1:8080> in Chrome or Edge. Firefox and Safari have
+Then open <http://127.0.0.1:8000> in Chrome or Edge. Firefox and Safari have
 no WebHID, so the page will tell you it cannot work there.
 
 On Linux, install the udev rule in the [README](README.md#requirements) before
@@ -37,7 +37,8 @@ python tests/static_site.py  # after building dist; needs Chrome and chromedrive
 
 The static-site test also uploads the supplied Net2 sample in
 `tests/fixtures/net2-import.csv`, verifies decimal/hex downloads, and checks
-desktop/mobile layouts. Screenshots are saved under `target/batch-*.png`.
+desktop/mobile layouts. It stands in a fake Net2 Local API for `fetch`, to
+check sign-in, portrait upload, and saving cards straight to Net2. Screenshots are saved under `target/batch-*.png`.
 
 The host is the default target, so `cargo test` needs no triple and works
 wherever you are. `cargo w` is an alias for

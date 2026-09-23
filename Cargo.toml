@@ -1,10 +1,10 @@
 [package]
 name = "tusk"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
-description = "Read Paxton Net2 tokens in the browser over WebHID"
+description = "Read Paxton Net2 tokens in the browser over WebHID, and send cards and portraits to Net2"
 repository = "https://github.com/gregorycarnegie/tusk"
 
 [lib]
@@ -15,17 +15,20 @@ name = "tusk-site"
 path = "src/main.rs"
 
 [dependencies]
-csv = "1.4"
+csv = "1.4.0"
+# Net2 Local API JSON, and portrait dimensions checked before upload.
+serde_json = "1.0.151"
+imagesize = "0.15.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 topcoat = { version = "0.8.1", default-features = false, features = ["view"] }
-futures-executor = "0.3"
+futures-executor = "0.3.34"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-js-sys = "0.3"
-web-sys = { version = "0.3", features = [
+wasm-bindgen = "0.2.128"
+wasm-bindgen-futures = "0.4.78"
+js-sys = "0.3.105"
+web-sys = { version = "0.3.105", features = [
     "Clipboard",
     "Document",
     "Element",
@@ -55,14 +58,20 @@ web-sys = { version = "0.3", features = [
     "Navigator",
     "Window",
     "Location",
+    "AbortSignal",
+    "FileReader",
+    "Headers",
+    "Request",
+    "RequestInit",
+    "Response",
 ] }
 
 # Host tests: `cargo test`. proptest does not build for wasm32.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 # round-trip property testing for the frame codec
-proptest = "1"
+proptest = "1.11.0"
 
 # Browser tests: `cargo w`, run in headless Chrome by
 # wasm-bindgen-test-runner (.cargo/config.toml), against a fake reader.
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-wasm-bindgen-test = "0.3"
+wasm-bindgen-test = "0.3.78"

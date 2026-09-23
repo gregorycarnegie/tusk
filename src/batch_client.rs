@@ -10,7 +10,7 @@ use web_sys::{
 use crate::{
     batch::{Batch, Format},
     client::{element, on_click},
-    reader::{State, Tone},
+    reader::{State, Tone, Tool},
 };
 
 fn input(id: &str) -> HtmlInputElement {
@@ -23,17 +23,33 @@ fn disabled(id: &str, disabled: bool) {
 }
 
 pub fn render(state: &State) {
-    element("reader-intro").set_hidden(state.batch_mode);
-    element("reading").set_hidden(state.batch_mode);
-    element("batch-intro").set_hidden(!state.batch_mode);
-    element("batch-tool").set_hidden(!state.batch_mode);
-    for (id, selected) in [
-        ("reader-tab", !state.batch_mode),
-        ("batch-tab", state.batch_mode),
+    let tool = state.tool;
+    element("reader-intro").set_hidden(tool != Tool::Reader);
+    element("reading").set_hidden(tool != Tool::Reader);
+    element("reader-panel").set_hidden(tool == Tool::Portraits);
+    element("batch-intro").set_hidden(tool != Tool::Batch);
+    element("batch-tool").set_hidden(tool != Tool::Batch);
+    element("portraits-intro").set_hidden(tool != Tool::Portraits);
+    for (id, tab) in [
+        ("reader-tab", Tool::Reader),
+        ("batch-tab", Tool::Batch),
+        ("portraits-tab", Tool::Portraits),
     ] {
         element(id)
-            .set_attribute("aria-current", if selected { "page" } else { "false" })
+            .set_attribute("aria-current", if tab == tool { "page" } else { "false" })
             .unwrap();
+    }
+    let net2_source = element("batch-source")
+        .unchecked_into::<HtmlSelectElement>()
+        .value()
+        == "net2";
+    element("batch-csv").set_hidden(net2_source);
+    element("batch-net2").set_hidden(!net2_source);
+    let format: HtmlSelectElement = element("batch-format").unchecked_into();
+    // Net2 stores the decimal number, so a direct queue has no choice to make.
+    format.set_disabled(net2_source);
+    if net2_source {
+        format.set_value("decimal");
     }
     element("batch-error").set_hidden(state.batch_error.is_empty());
     element("batch-error").set_text_content(Some(&state.batch_error));
@@ -61,15 +77,16 @@ pub fn render(state: &State) {
         &batch.notice
     };
     element("batch-notice").set_text_content(Some(notice));
+    let sending = batch.sending.is_some();
     disabled(
         "batch-start",
         current.is_none() || batch.running || state.status.0 != Tone::Ready,
     );
-    disabled("batch-pause", !batch.running);
-    disabled("batch-skip", current.is_none());
+    disabled("batch-pause", !batch.running || sending);
+    disabled("batch-skip", current.is_none() || sending);
     disabled("batch-undo", !batch.can_undo());
-    let format: HtmlSelectElement = element("batch-format").unchecked_into();
-    format.set_disabled(assigned != 0);
+    input("batch-file").set_disabled(sending);
+    format.set_disabled(assigned != 0 || batch.net2_ids.is_some());
     format.set_value(if batch.format == Format::Hex {
         "hex"
     } else {
@@ -119,13 +136,17 @@ pub fn setup(state: Rc<RefCell<State>>) {
         let state = state.clone();
         move || {
             let mut state = state.borrow_mut();
-            state.batch_mode = web_sys::window()
+            let hash = web_sys::window()
                 .unwrap()
                 .location()
                 .hash()
-                .unwrap_or_default()
-                == "#batch";
-            if !state.batch_mode
+                .unwrap_or_default();
+            state.tool = match hash.as_str() {
+                "#batch" => Tool::Batch,
+                "#portraits" => Tool::Portraits,
+                _ => Tool::Reader,
+            };
+            if state.tool != Tool::Batch
                 && let Some(batch) = &mut state.batch
             {
                 batch.running = false;
@@ -168,35 +189,23 @@ pub fn setup(state: Rc<RefCell<State>>) {
                     Err(_) => Err("Could not read that file. Choose it again.".into()),
                 }
             };
-            let discard = !state.borrow().batch.as_ref().is_some_and(|b| b.dirty)
-                || result.is_err()
-                || web_sys::window()
-                    .unwrap()
-                    .confirm_with_message(
-                        "Replace this batch? Assignments since your last download will be lost.",
-                    )
-                    .unwrap_or(false);
-            let mut state = state.borrow_mut();
-            if discard {
-                match result {
-                    Ok(batch) => {
-                        state.batch = Some(batch);
-                        state.batch_filename = file.name();
-                        state.batch_error.clear();
-                    }
-                    Err(error) => state.batch_error = error,
-                }
-            }
             input("batch-file").set_disabled(false);
             input("batch-file").set_value("");
             input("batch-replace").set_disabled(false);
             element("batch-format")
                 .unchecked_into::<HtmlSelectElement>()
                 .set_disabled(false);
-            crate::client::render(&state);
+            replace_batch(&state, result, file.name());
         });
     });
     input("batch-file").set_onchange(Some(callback.as_ref().unchecked_ref()));
+    callback.forget();
+
+    let source_state = state.clone();
+    let callback = Closure::<dyn FnMut()>::new(move || {
+        crate::client::render(&source_state.borrow());
+    });
+    element("batch-source").set_onchange(Some(callback.as_ref().unchecked_ref()));
     callback.forget();
 
     let format_state = state.clone();
@@ -259,6 +268,30 @@ pub fn setup(state: Rc<RefCell<State>>) {
         .unwrap()
         .set_onbeforeunload(Some(callback.as_ref().unchecked_ref()));
     callback.forget();
+}
+
+/// Swap in newly loaded people, unless that would lose unsaved assignments.
+pub fn replace_batch(state: &RefCell<State>, result: Result<Batch, String>, name: String) {
+    let discard = !state.borrow().batch.as_ref().is_some_and(|b| b.dirty)
+        || result.is_err()
+        || web_sys::window()
+            .unwrap()
+            .confirm_with_message(
+                "Replace this batch? Assignments since your last download will be lost.",
+            )
+            .unwrap_or(false);
+    let mut state = state.borrow_mut();
+    if discard {
+        match result {
+            Ok(batch) => {
+                state.batch = Some(batch);
+                state.batch_filename = name;
+                state.batch_error.clear();
+            }
+            Err(error) => state.batch_error = error,
+        }
+    }
+    crate::client::render(&state);
 }
 
 fn selected_format() -> Format {

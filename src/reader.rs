@@ -37,6 +37,34 @@ pub enum Tone {
     Problem,
 }
 
+impl Tone {
+    /// The status line's `data-tone`, which the stylesheet colours.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Busy => "busy",
+            Self::Ready => "ready",
+            Self::Problem => "problem",
+        }
+    }
+}
+
+/// Which tab is showing.
+#[derive(Clone, Copy, Default, PartialEq)]
+pub enum Tool {
+    #[default]
+    Reader,
+    Batch,
+    Portraits,
+}
+
+/// Signed in to Net2. Kept in memory only, so a reload signs out.
+#[derive(Clone)]
+pub struct Session {
+    pub origin: String,
+    pub token: String,
+}
+
 /// Shared by the polling loop and the browser controls, without a UI framework.
 pub struct State {
     pub card: Option<Token>,
@@ -46,7 +74,9 @@ pub struct State {
     pub batch: Option<Batch>,
     pub batch_filename: String,
     pub batch_error: String,
-    pub batch_mode: bool,
+    pub tool: Tool,
+    pub net2: Option<Session>,
+    pub net2_status: (Tone, String),
     pub on_change: fn(&Self),
 }
 
@@ -60,7 +90,9 @@ impl Default for State {
             batch: None,
             batch_filename: String::new(),
             batch_error: String::new(),
-            batch_mode: false,
+            tool: Tool::Reader,
+            net2: None,
+            net2_status: (Tone::Idle, "Not connected".into()),
             on_change: |_| {},
         }
     }

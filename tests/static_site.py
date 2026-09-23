@@ -63,7 +63,49 @@ Object.defineProperty(navigator, 'hid', {configurable: true, value: {
 Object.defineProperty(navigator, 'clipboard', {value: {
     async writeText(text) { window.copied = text; }
 }});
+// A Net2 Local API at https://net2.test: users 7 and 12 have no portrait or
+// card, 8 has both. Every request is recorded in net2.calls.
+window.net2 = {calls: [], cards: {8: ['11111111']}, images: {}};
+const realFetch = window.fetch.bind(window);
+window.fetch = async (url, init = {}) => {
+    const api = 'https://net2.test/api/v1';
+    if (!String(url).startsWith(api)) return realFetch(url, init);
+    const path = String(url).slice(api.length), method = init.method || 'GET';
+    const auth = init.headers && init.headers.get('Authorization');
+    const kind = init.headers && init.headers.get('Content-Type');
+    const body = !init.body ? null : kind === 'application/json'
+        ? JSON.parse(init.body) : Object.fromEntries(new URLSearchParams(init.body));
+    net2.calls.push({method, path, body, auth, kind});
+    const reply = (status, data) => new Response(data === undefined ? null : JSON.stringify(data), {status});
+    if (path === '/authorization/tokens') {
+        return body.password === 'right &=%' ? reply(200, {access_token: 'T0K'}) : reply(400, {message: 'invalid_client'});
+    }
+    if (auth !== 'Bearer T0K') return reply(401, {Message: 'Authorization has been denied'});
+    const users = {
+        7: {id: 7, firstName: 'Ada', lastName: 'Lovelace', hasImage: false},
+        8: {id: 8, firstName: 'Jane', lastName: 'Doe', hasImage: true},
+        12: {id: 12, firstName: 'John', lastName: 'Roe', hasImage: false},
+    };
+    let m;
+    if (path === '/departments') return reply(200, [{id: 3, name: 'Year 7'}]);
+    if (path === '/departments/3/users') return reply(200, [users[8], users[12]]);
+    if ((m = path.match(/^\/users\/(\d+)$/))) return users[m[1]] ? reply(200, users[m[1]]) : reply(404);
+    if ((m = path.match(/^\/users\/(\d+)\/image$/)) && method === 'PUT') {
+        net2.images[m[1]] = body.base64Data;
+        return reply(204);
+    }
+    if ((m = path.match(/^\/users\/(\d+)\/tokens$/))) {
+        const cards = net2.cards[m[1]] = net2.cards[m[1]] || [];
+        if (method === 'POST') { cards.push(body.tokenValue); return reply(201, body); }
+        return reply(200, cards.map(tokenValue => ({tokenType: 'ProxCard', tokenValue, isLost: false})));
+    }
+    return reply(404);
+};
 """
+
+# A 1x1 PNG header: enough for the portrait checks.
+PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52,
+       0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0]
 
 
 def main():
@@ -235,6 +277,85 @@ def main():
             assert downloaded('hex-cards.csv') == sample_rows
             assert js('return errors') == []
 
+            # Net2: sign in, upload a portrait, then save taps straight to Net2 users.
+            js("window.confirm = () => true; location.hash = 'portraits'")
+            wait("!document.getElementById('portrait-tool').hidden && !document.getElementById('net2-panel').hidden")
+            assert js("return document.getElementById('reader-panel').hidden")
+
+            def sign_in(password):
+                fields = {'net2-server': 'https://NET2.test/', 'net2-client': 'client',
+                          'net2-user': 'System engineer', 'net2-password': password + ' &=%'}
+                js(f"""
+                    for (const [id, value] of Object.entries({json.dumps(fields)}))
+                        document.getElementById(id).value = value;
+                    document.getElementById('net2-connect').click();
+                """)
+            sign_in('wrong')
+            wait("document.getElementById('net2-message').textContent.includes('ClientID')")
+            assert js("return document.getElementById('net2-password').value === ''")
+            # A JSON sign-in needs a CORS preflight, which Net2's rate limit refuses.
+            assert js("return net2.calls[0].kind") == 'application/x-www-form-urlencoded'
+            sign_in('right')
+            wait("document.getElementById('net2-message').textContent === 'Connected to https://net2.test'")
+            assert js("return document.getElementById('net2-form').hidden")
+            js(f"""
+                const png = new Uint8Array({PNG}), transfer = new DataTransfer();
+                for (const name of ['7.png', '8.png', '007.png']) transfer.items.add(new File([png], name));
+                const input = document.getElementById('portrait-files');
+                input.files = transfer.files;
+                input.dispatchEvent(new Event('change'));
+            """)
+            wait("document.querySelectorAll('#portrait-rows tr').length === 3 && !document.getElementById('portrait-review').disabled")
+            assert js("return document.querySelector('#portrait-rows tr:nth-child(3) .problem') !== null")
+            js("document.getElementById('portrait-review').click()")
+            wait("document.getElementById('portrait-notice').textContent.startsWith('Checked')")
+            assert js("return document.querySelector('#portrait-rows tr td:nth-child(3)').textContent === 'Ada Lovelace'")
+            assert js("return document.getElementById('portrait-upload').textContent === 'Upload 1 portrait'")
+            js("document.getElementById('portrait-upload').click()")
+            wait("document.getElementById('portrait-notice').textContent.startsWith('Done. 1 of 1')")
+            assert js("return Object.keys(net2.images).join() === '7'")
+            assert js("return net2.images[7]") == base64.b64encode(bytes(PNG)).decode()
+
+            js("""location.hash = 'batch';
+                  const source = document.getElementById('batch-source');
+                  source.value = 'net2';
+                  source.dispatchEvent(new Event('change'));""")
+            wait("!document.getElementById('batch-net2').hidden && document.querySelectorAll('#batch-department option').length === 2")
+            assert js("return document.getElementById('batch-format').disabled && document.getElementById('batch-csv').hidden")
+            assert js("return document.getElementById('batch-token-type').value") == 'ProxIsoCardWithoutMagstripe'
+            js("""const types = document.getElementById('batch-token-type');
+                  types.value = 'Keyfob';
+                  types.dispatchEvent(new Event('change'));""")
+            assert js("return localStorage.getItem('batch-token-type')") == 'Keyfob'
+
+            js("""document.getElementById('batch-replace').checked = false;
+                  document.getElementById('batch-department').value = '3';
+                  document.getElementById('batch-load').click();""")
+            wait("document.getElementById('batch-prompt').textContent === 'Next: Jane Doe'")
+            js("document.getElementById('batch-start').click(); reader.card = false")
+            wait("document.getElementById('number').textContent === '--------'")
+            js('reader.card = true')
+            wait("document.getElementById('batch-notice').textContent.includes('Jane Doe already has card 11111111')")
+            assert js("return document.getElementById('batch-prompt').textContent.includes('John Roe')")
+            js('reader.card = false')
+            wait("document.getElementById('number').textContent === '--------'")
+            js('reader.card = true')
+            wait("document.getElementById('batch-progress').textContent.includes('1 assigned')")
+            assert js("return JSON.stringify(net2.cards[12])") == '["34935100"]'
+            posted = js("return net2.calls.filter(c => c.method === 'POST' && c.path.startsWith('/users/')).map(c => c.body)")
+            assert posted == [{'tokenType': 'Keyfob', 'tokenValue': '34935100', 'isLost': False}]
+            assert js("return document.getElementById('batch-prompt').textContent.includes('Queue complete')")
+            assert js("return document.getElementById('batch-undo').disabled")
+            assert js("return dispatchEvent(new Event('beforeunload', {cancelable: true}))")
+            js("document.getElementById('batch-download').click()")
+            assert downloaded('Net2 - Year 7-cards.csv') == [
+                ['User ID', 'First name', 'Surname', 'Card Number'],
+                ['8', 'Jane', 'Doe', ''],
+                ['12', 'John', 'Roe', '34935100'],
+            ]
+            assert js("return net2.calls.every(c => c.path === '/authorization/tokens' || c.auth === 'Bearer T0K')")
+            assert js('return errors') == []
+
             js('reader.unplugged = true; reader.opened = false')
             wait("document.getElementById('message').textContent.startsWith('Reader unplugged')")
             assert js('return errors') == []
@@ -245,7 +366,7 @@ def main():
             wait("document.getElementById('message').textContent.startsWith('WebHID is not available')")
             assert js("return document.getElementById('connect').disabled")
             assert js('return errors') == []
-            print('Static site smoke test passed: reader, batch upload, sequential taps, duplicate guard, pause, skip/undo, CSV preservation, decimal/hex downloads, and no WebHID.')
+            print('Static site smoke test passed: reader, batch upload, sequential taps, duplicate guard, pause, skip/undo, CSV preservation, decimal/hex downloads, Net2 sign-in, portrait upload, direct card saving, and no WebHID.')
         finally:
             try:
                 if session:

@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-23
+
+### Added
+
+- **Upload portraits**: match JPG and PNG files named by Net2 user ID, check
+  every match, then upload them to Net2. Existing portraits are kept unless
+  replacement is ticked, and each upload re-reads the person first. Ported from
+  the net_to_rest prototype, without its local server.
+- **Cards straight to Net2**: load people from Net2, all users or one
+  department, and save each tapped card to its person as it is read. People
+  who already have a card keep it unless new cards were requested. CSV import
+  and download still work as before. Pick the Net2 card type to record; it
+  defaults to Proximity ISO card no magstripe and is remembered.
+- Net2 sign-in with an operator account and integration ClientID, from the page
+  itself. Net2's nginx allows cross-origin requests, so no server is needed.
+  An `invalid_client` error now says to use the licence's ClientID, not its Id.
+  Sign-in is sent as a form so the browser skips its CORS preflight: Net2's
+  nginx allows one sign-in request per 500 ms from any non-loopback address,
+  and a preflight followed by the real request always got a 429.
+
+### Changed
+
+- Pin dependency requirements to the versions in use.
+- The build instructions serve the site on port 8000. Net2's own web server
+  uses 8080 for its setup page.
+
+### Known issues
+
+- A real portrait upload and a real card save have been tested only against a
+  fake Net2. Signing in to a real Net2 has been checked as far as its
+  `invalid_client` refusal. Check the first few in Net2.
+- Accounts that need MFA cannot sign in yet.
+
 ## [0.3.0] - 2026-09-21
 
 ### Added
@@ -155,7 +188,8 @@ because each was a wrong assumption worth remembering:
   reports.
 - Tokens are assumed to be 4 to 8 bytes. Longer ones would be ignored.
 
-[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/gregorycarnegie/tusk/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/gregorycarnegie/tusk/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/gregorycarnegie/tusk/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/gregorycarnegie/tusk/compare/v0.2.0...v0.2.1

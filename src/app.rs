@@ -19,7 +19,7 @@ fn page(cx: &Cx) -> impl View {
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>"Tusk"</title>
-            <meta name="description" content="Read Paxton Net2 tokens in the browser from a USB desktop reader, over WebHID.">
+            <meta name="description" content="Read Paxton Net2 tokens in the browser from a USB desktop reader, over WebHID, and send cards and portraits straight to Net2.">
             <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2356AA1C'/%3E%3Cpath d='M9 6c-1 12 5 19 17 20-8-3-12-10-12-20a2.5 2.5 0 0 0-5 0Z' fill='%23fff'/%3E%3C/svg%3E">
             <link rel="preconnect" href="https://fonts.googleapis.com">
             <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
@@ -40,6 +40,7 @@ fn page(cx: &Cx) -> impl View {
             <nav class="tool-nav" aria-label="Tools">
                 <a id="reader-tab" href="#reader" aria-current="page">"Read a card"</a>
                 <a id="batch-tab" href="#batch">"Batch assign cards"</a>
+                <a id="portraits-tab" href="#portraits">"Upload portraits"</a>
             </nav>
             <section id="reader-intro" class="intro">
                 <h1>"Read Net2 tokens in your browser"</h1>
@@ -47,9 +48,13 @@ fn page(cx: &Cx) -> impl View {
             </section>
             <section id="batch-intro" class="intro" hidden="">
                 <h1>"A card for every name"</h1>
-                <p>"Load your Net2 import CSV, tap each person’s card, and download the completed file."</p>
+                <p>"Load people from a Net2 import CSV or straight from Net2, then tap each person’s card."</p>
             </section>
-            <section class="panel">
+            <section id="portraits-intro" class="intro" hidden="">
+                <h1>"A face for every card"</h1>
+                <p>"Name each photo with a Net2 user ID, check who it matches, then upload them all to Net2."</p>
+            </section>
+            <section id="reader-panel" class="panel">
                 <div class="panel-head">
                     <p id="status" class="status" data-tone="busy" role="status">
                         <span class="dot"></span><span id="message">"Loading reader support…"</span>
@@ -79,7 +84,9 @@ fn page(cx: &Cx) -> impl View {
                     </div>
                 </div>
             </section>
+            net2_panel()
             batch_tool()
+            portrait_tool()
             <noscript>"Enable JavaScript to connect to the reader."</noscript>
         </main>
         <footer>
@@ -103,10 +110,33 @@ async fn batch_tool() -> topcoat::Result<impl View> {
     Ok(view! {
         <section id="batch-tool" hidden="" aria-label="Batch card assignment">
             <div class="batch-setup panel">
-                <label for="batch-file">"1. Choose your Net2 CSV"</label>
-                <input id="batch-file" type="file" accept=".csv,text/csv">
-                <p class="hint">"Needs First name, Surname and Card Number columns. All other fields are preserved. Your file stays in this browser."</p>
-                <label class="checkbox"><input id="batch-replace" type="checkbox">"Replace existing card numbers in the next file I load"</label>
+                <label for="batch-source">"1. Who needs cards?"</label>
+                <select id="batch-source">
+                    <option value="csv" selected="">"People in a Net2 import CSV"</option>
+                    <option value="net2">"People already in Net2"</option>
+                </select>
+                <div id="batch-csv">
+                    <input id="batch-file" type="file" accept=".csv,text/csv" aria-label="Net2 import CSV">
+                    <p class="hint">"Needs First name, Surname and Card Number columns. All other fields are preserved. Your file stays in this browser."</p>
+                </div>
+                <div id="batch-net2" hidden="">
+                    <label for="batch-department">"Department"</label>
+                    <select id="batch-department"><option value="">"All users"</option></select>
+                    <label for="batch-token-type">"Card type"</label>
+                    <select id="batch-token-type">
+                        for (value, label) in tusk::net2::TOKEN_TYPES {
+                            if value == tusk::net2::DEFAULT_TOKEN_TYPE {
+                                <option value=(value) selected="">(label)</option>
+                            } else {
+                                <option value=(value)>(label)</option>
+                            }
+                        }
+                    </select>
+                    <button id="batch-load" class="primary">"Load people from Net2"</button>
+                    <p class="hint">"Each card is saved to its person in Net2 the moment it is tapped, as a Net2 decimal number. Download CSV still gives you a record of the session."</p>
+                </div>
+                <label class="checkbox"><input id="batch-replace" type="checkbox">"Give new cards to people who already have one"</label>
+                <p class="hint">"Applies to the next people you load. Otherwise they keep their card. In a CSV the Card Number is replaced; in Net2 the new card is added and the old one keeps working until you remove it there."</p>
                 <label for="batch-format">"Card number format"</label>
                 <select id="batch-format">
                     <option value="decimal" selected="">"Net2 decimal (recommended)"</option>
@@ -142,6 +172,60 @@ async fn batch_tool() -> topcoat::Result<impl View> {
                             <tbody id="batch-rows"></tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+        </section>
+    })
+}
+
+#[component]
+async fn net2_panel() -> topcoat::Result<impl View> {
+    Ok(view! {
+        <section id="net2-panel" class="panel" hidden="" aria-label="Net2 connection">
+            <div class="panel-head">
+                <p id="net2-state" class="status" data-tone="idle" role="status">
+                    <span class="dot"></span><span id="net2-message">"Not connected"</span>
+                </p>
+                <button id="net2-disconnect" class="secondary" hidden="">"Disconnect"</button>
+            </div>
+            <form id="net2-form" class="net2-form">
+                <label>"Net2 server"<input id="net2-server" type="url" placeholder="https://net2-server:8443" required="" autocomplete="off" spellcheck="false"></label>
+                <label>"Integration client ID"<input id="net2-client" required="" autocomplete="off" spellcheck="false"></label>
+                <label>"Operator name"<input id="net2-user" required="" autocomplete="off"></label>
+                <label>"Password"<input id="net2-password" type="password" required="" autocomplete="off"></label>
+                <details>
+                    <summary>"Client secret, if your integration has one"</summary>
+                    <label>"Client secret"<input id="net2-secret" type="password" autocomplete="off"></label>
+                </details>
+                <p class="hint">"The client ID is the ClientID attribute inside your Net2 API licence, not the licence Id. This computer must trust the Net2 server’s certificate, and Chrome may ask to let this page reach devices on your network. Nothing is sent anywhere but your Net2 server."</p>
+                <button id="net2-connect" class="primary" type="submit">"Connect to Net2"</button>
+            </form>
+        </section>
+    })
+}
+
+#[component]
+async fn portrait_tool() -> topcoat::Result<impl View> {
+    Ok(view! {
+        <section id="portrait-tool" hidden="" aria-label="Portrait upload">
+            <div class="batch-setup panel">
+                <label for="portrait-files">"Choose portraits"</label>
+                <input id="portrait-files" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" multiple="">
+                <p class="hint">"Name each file with the person’s Net2 user ID, like 12345.jpg. JPG or PNG, up to 3.5 MB each. Not a personnel or card number."</p>
+                <label class="checkbox"><input id="portrait-replace" type="checkbox">"Replace portraits people already have"</label>
+                <div class="actions">
+                    <button id="portrait-review" class="secondary">"Check matches"</button>
+                    <button id="portrait-upload" class="primary">"Upload portraits"</button>
+                    <button id="portrait-stop" class="secondary" hidden="">"Stop after this one"</button>
+                </div>
+                <p id="portrait-notice" class="notice" role="status">"Choose portraits to begin. Nothing uploads until you confirm."</p>
+            </div>
+            <div id="portrait-list" class="batch-review panel" hidden="">
+                <div class="table-scroll" tabindex="0" role="region" aria-label="Portraits">
+                    <table>
+                        <thead><tr><th scope="col">"Portrait"</th><th scope="col">"User ID"</th><th scope="col">"Net2 person"</th><th scope="col">"Has portrait"</th><th scope="col">"Result"</th></tr></thead>
+                        <tbody id="portrait-rows"></tbody>
+                    </table>
                 </div>
             </div>
         </section>

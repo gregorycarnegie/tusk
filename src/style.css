@@ -143,3 +143,20 @@
     .current-person { background: color-mix(in srgb, var(--brand) 12%, var(--surface)); }
     #batch-file-name { overflow-wrap: anywhere; }
     @media (max-width: 450px) { .batch-task .actions { flex-direction: column; align-items: stretch; } .batch-task button { justify-content: center; } }
+    #net2-panel, #portrait-tool { margin-top: 1rem; }
+    .net2-form { display: grid; gap: .75rem; padding: 1.25rem; }
+    .net2-form label { display: grid; gap: .3rem; font-weight: 600; }
+    .net2-form input {
+      font: inherit; padding: .6rem; background: var(--surface); color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px; width: 100%;
+    }
+    .net2-form details { color: var(--muted); }
+    .net2-form summary { cursor: pointer; margin-bottom: .5rem; }
+    .net2-form .hint { margin: 0; }
+    .net2-form button { justify-self: start; }
+    #batch-net2 button { margin: .25rem 0 .5rem; }
+    #batch-net2 label { margin-top: .5rem; }
+    .notice { text-align: center; margin: 1rem 0 0; }
+    #portrait-rows img { width: 3rem; height: 3rem; object-fit: cover; border-radius: 6px; vertical-align: middle; margin-right: .5rem; }
+    td.problem { color: var(--problem); font-weight: 600; }
+    td.done { color: var(--accent); font-weight: 600; }

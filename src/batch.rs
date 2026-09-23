@@ -1,5 +1,7 @@
 //! CSV data and the assignment queue. Only Card Number changes on export.
-use crate::token::Token;
+//! A queue loaded from Net2 is direct: each tap is saved to Net2 first, and
+//! only counts as assigned once Net2 has accepted it.
+use crate::{net2::User, token::Token};
 
 #[derive(Clone, Copy, Default, PartialEq)]
 pub enum Format {
@@ -21,6 +23,8 @@ pub struct Row {
     pub fields: Vec<String>,
     pub assigned: Option<Token>,
     pub skipped: bool,
+    /// Net2 may or may not have saved this card; left out of the queue.
+    pub unsure: bool,
     eligible: bool,
 }
 
@@ -31,6 +35,12 @@ pub struct Batch {
     pub running: bool,
     pub notice: String,
     pub dirty: bool,
+    /// Net2 user IDs, one per row, for a queue loaded from Net2.
+    pub net2_ids: Option<Vec<i32>>,
+    /// The tap waiting for Net2 to accept it.
+    pub sending: Option<(usize, Token)>,
+    /// Give a card to people who already have one.
+    pub replace: bool,
     card_column: usize,
     first_column: usize,
     surname_column: usize,
@@ -96,6 +106,7 @@ impl Batch {
                 fields: record.iter().map(str::to_owned).collect(),
                 assigned: None,
                 skipped: false,
+                unsure: false,
             });
         }
         if rows.is_empty() {
@@ -108,6 +119,9 @@ impl Batch {
             running: false,
             notice: String::new(),
             dirty: false,
+            net2_ids: None,
+            sending: None,
+            replace,
             card_column,
             first_column,
             surname_column,
@@ -115,6 +129,28 @@ impl Batch {
             last_seen: None,
             bom: bytes.starts_with(b"\xef\xbb\xbf"),
         })
+    }
+
+    /// A direct queue for Net2 users, in Net2 decimal. Its CSV download keeps
+    /// the user IDs, so it is also a record of what was saved.
+    pub fn from_users(users: &[User], replace: bool) -> Result<Self, String> {
+        if users.is_empty() {
+            return Err("Net2 has no users there.".into());
+        }
+        let mut output = csv::Writer::from_writer(Vec::new());
+        let mut write = |fields: &[&str]| output.write_record(fields).map_err(|e| e.to_string());
+        write(&["User ID", "First name", "Surname", "Card Number"])?;
+        for user in users {
+            let first = match [user.first.as_str(), &user.middle].join(" ").trim() {
+                "" if user.last.is_empty() => "(No name)".to_string(),
+                first => first.to_string(),
+            };
+            write(&[&user.id.to_string(), &first, &user.last, ""])?;
+        }
+        let bytes = output.into_inner().map_err(|e| e.to_string())?;
+        let mut batch = Self::parse(&bytes, replace, Format::Decimal)?;
+        batch.net2_ids = Some(users.iter().map(|user| user.id).collect());
+        Ok(batch)
     }
 
     pub fn name(&self, index: usize) -> String {
@@ -131,7 +167,7 @@ impl Batch {
     pub fn current(&self) -> Option<usize> {
         self.rows
             .iter()
-            .position(|r| r.eligible && r.assigned.is_none() && !r.skipped)
+            .position(|r| r.eligible && r.assigned.is_none() && !r.skipped && !r.unsure)
     }
 
     pub fn value(&self, index: usize) -> String {
@@ -144,8 +180,12 @@ impl Batch {
 
     pub fn row_status(&self, index: usize) -> &'static str {
         let row = &self.rows[index];
-        if row.assigned.is_some() {
+        if row.assigned.is_some() && self.net2_ids.is_some() {
+            "Saved to Net2"
+        } else if row.assigned.is_some() {
             "Assigned"
+        } else if row.unsure {
+            "Check in Net2"
         } else if row.skipped {
             "Skipped"
         } else if !row.eligible {
@@ -159,8 +199,12 @@ impl Batch {
         self.rows.iter().filter(|r| r.assigned.is_some()).count()
     }
 
+    /// A card saved to Net2 can only be removed in Net2.
     pub fn can_undo(&self) -> bool {
-        !self.history.is_empty()
+        self.sending.is_none()
+            && self.history.last().is_some_and(|&index| {
+                self.net2_ids.is_none() || self.rows[index].assigned.is_none()
+            })
     }
 
     pub fn resume(&mut self, card: Option<&Token>) {
@@ -180,7 +224,7 @@ impl Batch {
             return;
         }
         self.last_seen = identity;
-        if !self.running {
+        if !self.running || self.sending.is_some() {
             return;
         }
         let (Some(token), Some(index)) = (card, self.current()) else {
@@ -205,11 +249,26 @@ impl Batch {
             );
             return;
         }
-        self.rows[index].assigned = Some(token.clone());
-        self.history.push(index);
+        if self.net2_ids.is_some() {
+            self.notice = format!("Saving {value} to {} in Net2…", self.name(index));
+            self.sending = Some((index, token.clone()));
+            return;
+        }
+        self.assign(index, token.clone());
         self.dirty = true;
+    }
+
+    fn assign(&mut self, index: usize, token: Token) {
+        let value = self.format.value(&token);
+        self.rows[index].assigned = Some(token);
+        self.history.push(index);
         self.notice = format!(
-            "Assigned {value} to {}. Remove this card before the next tap.",
+            "{} {value} to {}. Remove this card before the next tap.",
+            if self.net2_ids.is_some() {
+                "Saved"
+            } else {
+                "Assigned"
+            },
             self.name(index)
         );
         if self.current().is_none() {
@@ -217,11 +276,41 @@ impl Batch {
         }
     }
 
+    /// Net2 accepted the staged card.
+    pub fn saved(&mut self) {
+        if let Some((index, token)) = self.sending.take() {
+            self.assign(index, token);
+        }
+    }
+
+    /// Net2 did not take the staged card. The person stays next unless they
+    /// already had a card (`kept`) or the outcome is unknown (`unsure`).
+    pub fn refused(&mut self, message: String, kept: bool, unsure: bool, stop: bool) {
+        let Some((index, _)) = self.sending.take() else {
+            return;
+        };
+        self.rows[index].eligible &= !kept;
+        self.rows[index].unsure = unsure;
+        self.running &= !stop && self.current().is_some();
+        self.notice = message;
+    }
+
+    /// The Net2 user the staged card is for.
+    pub fn sending_to(&self) -> Option<(i32, String, String)> {
+        let (index, token) = self.sending.as_ref()?;
+        let id = *self.net2_ids.as_ref()?.get(*index)?;
+        Some((id, self.name(*index), self.format.value(token)))
+    }
+
     pub fn skip(&mut self) {
+        if self.sending.is_some() {
+            return;
+        }
         if let Some(index) = self.current() {
             self.rows[index].skipped = true;
             self.history.push(index);
-            self.dirty = true;
+            // Nothing is lost by leaving a direct queue: Net2 already has it.
+            self.dirty |= self.net2_ids.is_none();
             self.notice = format!(
                 "Skipped {}. Their original Card Number is unchanged.",
                 self.name(index)
@@ -233,11 +322,14 @@ impl Batch {
     }
 
     pub fn undo(&mut self) {
+        if !self.can_undo() {
+            return;
+        }
         if let Some(index) = self.history.pop() {
             self.rows[index].assigned = None;
             self.rows[index].skipped = false;
             self.running = false;
-            self.dirty = true;
+            self.dirty |= self.net2_ids.is_none();
             self.notice = format!(
                 "Returned to {}. Press Start / resume when ready.",
                 self.name(index)
@@ -352,5 +444,54 @@ mod tests {
             assert!(Batch::parse(invalid.as_bytes(), false, Format::Decimal).is_err());
         }
         assert!(Batch::parse(&[0xff], false, Format::Decimal).is_err());
+    }
+
+    #[test]
+    fn direct_queue_counts_a_card_only_once_net2_accepts_it() {
+        let user = |id, first: &str, last: &str| User {
+            id,
+            first: first.into(),
+            middle: String::new(),
+            last: last.into(),
+            has_image: false,
+        };
+        let users = [
+            user(8, "Jane", "Doe"),
+            user(9, "", ""),
+            user(12, "John", "Roe"),
+        ];
+        let mut batch = Batch::from_users(&users, false).unwrap();
+        assert_eq!(batch.name(1), "(No name)");
+        let mut card = Token {
+            read: Read::Mifare,
+            hex: "5B7D4039".into(),
+            number: 34935097,
+        };
+        batch.resume(None);
+        batch.observe(Some(&card));
+        assert_eq!(
+            batch.sending_to(),
+            Some((8, "Jane Doe".into(), "34935097".into()))
+        );
+        assert_eq!(batch.assigned_count(), 0);
+        batch.skip(); // Nothing moves while Net2 is answering.
+        assert_eq!(batch.current(), Some(0));
+        batch.refused("Jane already has a card.".into(), true, false, false);
+        assert_eq!((batch.row_status(0), batch.current()), ("Kept", Some(1)));
+        batch.observe(None);
+        batch.observe(Some(&card));
+        batch.saved();
+        assert_eq!(batch.row_status(1), "Saved to Net2");
+        assert!(!batch.can_undo() && !batch.dirty);
+        card.hex = "5B7D403A".into();
+        card.number += 1;
+        batch.observe(Some(&card));
+        batch.refused("No answer.".into(), false, true, true);
+        assert_eq!(batch.row_status(2), "Check in Net2");
+        assert!(!batch.running && batch.current().is_none());
+        let exported = String::from_utf8(batch.export().unwrap()).unwrap();
+        assert!(exported.starts_with(
+            "User ID,First name,Surname,Card Number\r\n8,Jane,Doe,\r\n9,(No name),,34935097\r\n"
+        ));
     }
 }

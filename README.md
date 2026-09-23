@@ -10,6 +10,10 @@ Read tokens from a Paxton Net2 USB desktop reader in the browser, over WebHID.
 No drivers, no Net2 software, no server — put a card on the reader and the
 token number appears, as Net2 would show it.
 
+It can also talk to Net2 itself: upload ID card portraits, and save each
+tapped card straight to the right person, with no CSV import in between.
+See [Working with Net2 directly](#working-with-net2-directly).
+
 **Try it: <https://gregorycarnegie.github.io/tusk/>** — in Chrome or Edge,
 with the reader plugged in. Nothing to install.
 
@@ -66,10 +70,11 @@ cargo install wasm-bindgen-cli --version 0.2.128 --locked
 cargo run --locked -- dist
 cargo build --locked --release --lib --target wasm32-unknown-unknown
 wasm-bindgen --target web --no-typescript --out-dir dist target/wasm32-unknown-unknown/release/tusk.wasm
-python -m http.server 8080 --directory dist --bind 127.0.0.1
+python -m http.server 8000 --directory dist --bind 127.0.0.1
 ```
 
-Open <http://127.0.0.1:8080>, click **Connect reader**, and pick the device.
+Open <http://127.0.0.1:8000>, click **Connect reader**, and pick the device. (Not 8080 on a Net2 server:
+Net2's own web server uses that port for its setup page.)
 The picker shows it under an unreadable name — that is the reader returning
 uninitialised memory as its USB product string, and it differs every time it
 enumerates. Filtering on Paxton's vendor ID at least leaves it as the only
@@ -109,12 +114,64 @@ switching back to **Read a card**. Unsaved work triggers a leave-page warning;
 there is no persistent storage, so download regularly before closing the tab.
 Hitag2 decoding remains beta and should be checked against Net2 on real fobs.
 
+## Working with Net2 directly
+
+**Upload portraits** and the **People already in Net2** option under **Batch
+assign cards** sign in to the Net2 Local API from the page itself. Net2's
+own web server allows this; nothing passes through any other server, and
+the access token is held in memory only, so reloading signs you out.
+
+You need:
+
+- Net2 with **LocalAPI enabled** in the Net2 Configuration Utility, and the
+  Net2 Service and Net2 Nginx Service running.
+- An **API licence** installed on the Net2 server, and its **ClientID**. Open
+  the `.lic` file in `C:\Program Files (x86)\Paxton Access\Access Control\ApiLicences`
+  and copy the value of `<Attribute name="ClientID">`. The licence's own
+  `<Id>` looks similar and gives `invalid_client`.
+- A Net2 **operator** allowed to view users and edit tokens and portraits.
+  Accounts that need a second sign-in step (MFA) are not supported yet.
+- A browser that **trusts the Net2 server's certificate**, with the server
+  entered by a name the certificate covers (`https://net2-server:8443`). On the
+  Net2 server itself, `https://localhost:8443` works. Chrome may also ask to
+  let the page reach devices on your local network; allow it.
+
+**Portraits.** Name each JPG or PNG with the person's Net2 user ID
+(`12345.jpg`, no leading zeros, at most 3.5 MB and 40 megapixels). Choose the
+files, press **Check matches**, and compare every name with its photo. People
+who already have a portrait are skipped unless you tick **Replace portraits
+people already have**. **Upload portraits** asks for confirmation; each upload
+re-reads the person first and stops if they changed since the check. If a
+result says Net2 did not confirm the change, look in Net2 before trying again.
+
+**Cards straight to Net2.** Choose **People already in Net2**, connect, pick a
+department (or all users) and press **Load people from Net2**. Each tap is
+saved to that person as a Net2 decimal number. Anyone who already has a card
+keeps it and is passed over, unless **Give new cards to people who already
+have one** was ticked when you loaded them. In that case the new card is added
+and the old one keeps working until you remove it in Net2. Saved cards cannot
+be undone from Tusk; remove them in Net2. **Download CSV** still gives you a
+record with each person's Net2 user ID.
+
+If signing in says **Could not reach Net2**, open the server address in a
+browser tab. A VPN is a common cause: a server name can resolve to the VPN
+adapter's address, where the connection is dropped. On the Net2 server itself,
+use `https://localhost:8443`.
+
+Choose the **Card type** Net2 should record, as in Net2's Change token type
+dialog. It defaults to Proximity ISO card no magstripe, and the browser
+remembers your choice. Net2's "Dual credential" type is not offered: the API
+has no name for it. A real Net2 upload of either kind has not yet been tried,
+so check the first few in Net2.
+
 ## How it works
 
 Topcoat renders the complete HTML page at build time. The browser loads a small
 Rust WebAssembly module for WebHID, token decoding, and updating the controls.
 Leptos and Trunk are no longer used. Topcoat's server, router, and runtime features
-are disabled: there are no server endpoints or server-backed interactions.
+are disabled: there are no server endpoints or server-backed interactions. The
+Net2 tools call the Net2 Local API with `fetch`; Net2's nginx answers CORS for
+any origin, so this works from GitHub Pages as well as locally.
 
 Topcoat 0.8.1 does not yet provide a built-in static export command, so
 `cargo run -- dist` renders its `view!` template to `dist/index.html`.
@@ -177,6 +234,9 @@ repository subpath. Each push to `master` that passes is published to GitHub Pag
 | `src/client.rs` | Browser controls and DOM updates |
 | `src/batch.rs` | CSV preservation, assignment queue, and duplicate checks |
 | `src/batch_client.rs` | Batch upload, guided prompts, review, and download |
+| `src/net2.rs` | Net2 API errors and records, and portrait file rules |
+| `src/net2_client.rs` | Net2 sign-in, requests, and saving tapped cards |
+| `src/portrait_client.rs` | Portrait matching, checking, and upload |
 | `src/lib.rs` | Shared protocol library and WebAssembly entry point |
 | `PROTOCOL.md` | The reverse-engineered protocol |
 | `src/style.css` | Page styling |
