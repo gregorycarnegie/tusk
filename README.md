@@ -128,13 +128,18 @@ You need:
 - An **API licence** installed on the Net2 server, and its **ClientID**. Open
   the `.lic` file in `C:\Program Files (x86)\Paxton Access\Access Control\ApiLicences`
   and copy the value of `<Attribute name="ClientID">`. The licence's own
-  `<Id>` looks similar and gives `invalid_client`.
-- A Net2 **operator** allowed to view users and edit tokens and portraits.
-  Accounts that need a second sign-in step (MFA) are not supported yet.
+  `<Id>` looks similar and gives `invalid_client`. The Net2 Local API
+  Configuration Utility lists the ClientID under **Licence Install →
+  Activated licences**.
+- A Net2 **operator** allowed to view users and edit tokens and portraits,
+  entered exactly as Net2 names it. Net2's built-in engineer account is
+  `System engineer`. Accounts that need a second sign-in step (MFA) are not
+  supported yet.
 - A browser that **trusts the Net2 server's certificate**, with the server
   entered by a name the certificate covers (`https://net2-server:8443`). On the
   Net2 server itself, `https://localhost:8443` works. Chrome may also ask to
-  let the page reach devices on your local network; allow it.
+  let the page reach devices on your local network; allow it. See
+  [Trusting the Net2 certificate](#trusting-the-net2-certificate).
 
 **Portraits.** Name each photo with the person's Net2 user ID (`12345.jpg`,
 no leading zeros). A JPG or PNG of up to 3.5 MB and 40 megapixels is uploaded
@@ -156,16 +161,56 @@ and the old one keeps working until you remove it in Net2. Saved cards cannot
 be undone from Tusk; remove them in Net2. **Download CSV** still gives you a
 record with each person's Net2 user ID.
 
-If signing in says **Could not reach Net2**, open the server address in a
-browser tab. A VPN is a common cause: a server name can resolve to the VPN
-adapter's address, where the connection is dropped. On the Net2 server itself,
-use `https://localhost:8443`.
-
 Choose the **Card type** Net2 should record, as in Net2's Change token type
 dialog. It defaults to Proximity ISO card no magstripe, and the browser
 remembers your choice. Net2's "Dual credential" type is not offered: the API
 has no name for it. A real Net2 upload of either kind has not yet been tried,
 so check the first few in Net2.
+
+### Trusting the Net2 certificate
+
+Net2 makes its own certificate for the Local API, so no browser trusts it until
+you install it. Do this once on each computer that runs Tusk:
+
+1. On the Net2 server, open the Net2 Local API Configuration Utility and look
+   at **Certificate Import → Current Certificate** for the file's name, usually
+   `Net2LocalAPI.crt`. It is in Net2's `nginx` folder; search for the name if
+   it is not in `conf`. Copy only the `.crt` to the other computer. The `.key`
+   beside it is the server's private key and must stay on the server.
+2. Double-click the `.crt`, choose **Install Certificate…**, then **Local
+   Machine** (every user on the computer) or **Current User** (only you).
+3. Choose **Place all certificates in the following store**, **Browse…**, and
+   **Trusted Root Certification Authorities**. Leaving it on *Automatically
+   select* puts it where browsers ignore it. Finish, and answer **Yes** to the
+   security warning. From an administrator prompt, `certutil -addstore -f Root
+   Net2LocalAPI.crt` does the same for the whole computer.
+4. Close every Chrome or Edge window and reopen it. The Net2 address should now
+   open with no warning.
+
+The certificate is *issued to* and *issued by* the Net2 server; that is normal
+for a certificate the server made itself. Its **Details → Subject Alternative
+Name** lists the addresses it covers, so enter the server by one of those.
+Pressing **Regenerate** in the utility replaces the certificate, and every
+computer then needs the new one installed. If your organisation has its own
+certificate authority, **Import** a certificate from it instead, and domain
+computers will trust it with no per-computer install.
+
+### Sign-in problems
+
+- **Could not reach Net2:** open the server address in a browser tab; it
+  should load with no certificate warning. A VPN is a common cause: a server
+  name can resolve to the VPN adapter's address, where the connection is
+  dropped. On the Net2 server itself, use `https://localhost:8443`.
+- **invalid_client:** Net2 does not recognise the ClientID. Check it is the
+  `ClientID` attribute, not `<Id>`. After installing a licence, restart the
+  Local API from the utility's **Service Controller** tab (or reboot the
+  server); until then Net2 rejects the new ClientID. If it still fails, the
+  licence may need a client secret, which is not in the `.lic` file; ask
+  whoever issued the licence, and enter it under **Client secret**.
+- **Not signed in to Net2** straight after pressing Connect: Net2 did not
+  accept the operator name or password. Use the name exactly as it appears
+  under **Operators** in Net2, and check the same account can sign in to the
+  Net2 desktop app.
 
 ## How it works
 

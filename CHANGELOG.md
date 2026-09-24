@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- The README explains how to trust the Net2 Local API certificate on each
+  computer, and what `invalid_client` and "Not signed in to Net2" mean at
+  sign-in: restart the Local API after installing a licence, and enter the
+  operator exactly as Net2 names it.
+
 ## [0.4.1] - 2026-09-23
 
 ### Fixed
