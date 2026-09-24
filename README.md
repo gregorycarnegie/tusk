@@ -174,9 +174,12 @@ you install it. Do this once on each computer that runs Tusk:
 
 1. On the Net2 server, open the Net2 Local API Configuration Utility and look
    at **Certificate Import → Current Certificate** for the file's name, usually
-   `Net2LocalAPI.crt`. It is in Net2's `nginx` folder; search for the name if
-   it is not in `conf`. Copy only the `.crt` to the other computer. The `.key`
-   beside it is the server's private key and must stay on the server.
+   `Net2LocalAPI.crt`, in
+   `C:\Program Files (x86)\Paxton Access\Access Control\nginx\certificate`.
+   Explorer may hide the extension and show it as `Net2LocalAPI` with a
+   certificate icon. Copy only that file to the other computer. The
+   `Net2LocalAPI.key` beside it is the server's private key and must stay on
+   the server.
 2. Double-click the `.crt`, choose **Install Certificate…**, then **Local
    Machine** (every user on the computer) or **Current User** (only you).
 3. Choose **Place all certificates in the following store**, **Browse…**, and
