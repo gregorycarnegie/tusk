@@ -56,6 +56,9 @@ pub fn failure(message: impl Into<String>, uncertain: bool, halt: bool) -> Failu
 pub const UNCERTAIN_WRITE: &str =
     "Net2 did not confirm this change. Check it in Net2 before trying again.";
 
+const NOT_SIGNED_IN: &str = "Not signed in to Net2. Connect again.";
+const WRONG_OPERATOR: &str = "Net2 didn't accept the operator name or password.";
+
 /// Only a bare https origin, so credentials cannot go in clear text or to a
 /// path that is not the API root.
 pub fn parse_origin(value: &str) -> Result<String, String> {
@@ -73,7 +76,7 @@ pub fn parse_origin(value: &str) -> Result<String, String> {
 pub fn status_failure(status: u16, retry_after: Option<&str>, write: bool, body: &str) -> Failure {
     let mut message = match status {
         400 => "Net2 refused the request.".to_string(),
-        401 => "Not signed in to Net2. Connect again.".to_string(),
+        401 => NOT_SIGNED_IN.to_string(),
         403 => "Your Net2 operator or integration does not have permission.".to_string(),
         404 => "Not found in Net2.".to_string(),
         413 => "The image is larger than Net2 accepts.".to_string(),
@@ -104,6 +107,14 @@ pub fn status_failure(status: u16, retry_after: Option<&str>, write: bool, body:
         halt: matches!(status, 401 | 403 | 429),
         expired: status == 401,
     }
+}
+
+/// A 401 while signing in means the operator, not an expired session.
+pub fn sign_in_failure(mut problem: Failure) -> Failure {
+    if problem.expired {
+        problem.message = problem.message.replacen(NOT_SIGNED_IN, WRONG_OPERATOR, 1);
+    }
+    problem
 }
 
 /// Net2 documents camelCase but its examples are PascalCase; accept either.
@@ -314,6 +325,10 @@ mod tests {
         assert!(!rejected.halt && !rejected.uncertain);
         let expired = status_failure(401, None, false, "");
         assert!(expired.halt && expired.expired);
+        let operator = sign_in_failure(status_failure(401, None, false, r#"{"error":"nope"}"#));
+        assert!(operator.message.starts_with(WRONG_OPERATOR));
+        assert!(operator.message.contains("nope"));
+        assert_eq!(sign_in_failure(rejected.clone()), rejected);
         let limited = status_failure(429, Some("60"), false, "<html>proxy</html>");
         assert!(limited.message.contains("60 seconds") && !limited.message.contains("html"));
         assert!(status_failure(502, None, true, "").uncertain);

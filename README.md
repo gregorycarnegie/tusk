@@ -210,10 +210,9 @@ computers will trust it with no per-computer install.
   server); until then Net2 rejects the new ClientID. If it still fails, the
   licence may need a client secret, which is not in the `.lic` file; ask
   whoever issued the licence, and enter it under **Client secret**.
-- **Not signed in to Net2** straight after pressing Connect: Net2 did not
-  accept the operator name or password. Use the name exactly as it appears
-  under **Operators** in Net2, and check the same account can sign in to the
-  Net2 desktop app.
+- **Net2 didn't accept the operator name or password:** use the name exactly
+  as it appears under **Operators** in Net2, and check the same account can
+  sign in to the Net2 desktop app.
 
 ## How it works
 

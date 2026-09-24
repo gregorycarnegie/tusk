@@ -15,7 +15,7 @@ use crate::{
     client::{element, on_click},
     net2::{
         Failure, UNCERTAIN_WRITE, failure, parse_origin, read_cards, read_departments, read_users,
-        status_failure,
+        sign_in_failure, status_failure,
     },
     reader::{Session, State, Tone, Tool},
 };
@@ -270,7 +270,7 @@ async fn connect(state: Rc<RefCell<State>>) {
                     )
                 })
         });
-    let token = match token {
+    let token = match token.map_err(sign_in_failure) {
         Ok(token) => token,
         Err(mut problem) => {
             // Some servers echo submitted values in errors.

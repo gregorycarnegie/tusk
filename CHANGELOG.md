@@ -7,10 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A wrong operator name or password at sign-in said "Not signed in to Net2.
+  Connect again.", which reads like an expired session. It now says "Net2
+  didn't accept the operator name or password."
+
 ### Documentation
 
 - The README explains how to trust the Net2 Local API certificate on each
-  computer, and what `invalid_client` and "Not signed in to Net2" mean at
+  computer, and what `invalid_client` and a refused operator mean at
   sign-in: restart the Local API after installing a licence, and enter the
   operator exactly as Net2 names it.
 
