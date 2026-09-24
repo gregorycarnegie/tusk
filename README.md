@@ -142,10 +142,11 @@ You need:
   [Trusting the Net2 certificate](#trusting-the-net2-certificate).
 
 **Portraits.** Name each photo with the person's Net2 user ID (`12345.jpg`,
-no leading zeros). A JPG or PNG of up to 3.5 MB and 40 megapixels is uploaded
-exactly as it is. Anything else the browser can open (WebP, GIF, BMP, AVIF, or
-a photo that is too big) is converted in the browser to a JPG, at most 1200
-pixels on its longest side, and the table says so. Choose the
+no leading zeros). A JPG of up to 3.5 MB and 40 megapixels is uploaded
+exactly as it is. Anything else the browser can open (PNG, WebP, GIF, BMP,
+AVIF, or a photo that is too big) is converted in the browser to a JPG, at most
+1200 pixels on its longest side, and the table says so. PNGs are always
+converted: Net2 accepts one but shows no picture for it. Choose the
 files, press **Check matches**, and compare every name with its photo. People
 who already have a portrait are skipped unless you tick **Replace portraits
 people already have**. **Upload portraits** asks for confirmation; each upload

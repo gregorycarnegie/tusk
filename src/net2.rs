@@ -240,19 +240,16 @@ pub fn portrait_user_id(filename: &str) -> Result<i32, String> {
 }
 
 /// Whether the file can go to Net2 exactly as it is; anything else is
-/// converted. `header` need only be the first few kilobytes; `size` is the
-/// whole file.
+/// converted. Only a JPG: Net2 stores a PNG but shows no picture for it.
+/// `header` need only be the first few kilobytes; `size` is the whole file.
 pub fn check_portrait(filename: &str, header: &[u8], size: usize) -> Result<(), String> {
     if size == 0 || size > MAX_IMAGE_BYTES {
         return Err("Images must be no larger than 3.5 MB.".into());
     }
     let lower = filename.to_ascii_lowercase();
     let jpeg = header.starts_with(&[0xFF, 0xD8, 0xFF]);
-    let png = header.starts_with(b"\x89PNG\r\n\x1a\n");
-    if !(png && lower.ends_with(".png")
-        || jpeg && (lower.ends_with(".jpg") || lower.ends_with(".jpeg")))
-    {
-        return Err("The file is not the JPG or PNG its name says.".into());
+    if !(jpeg && (lower.ends_with(".jpg") || lower.ends_with(".jpeg"))) {
+        return Err("The file is not the JPG its name says.".into());
     }
     match imagesize::blob_size(header) {
         Ok(size) if size.width as u64 * size.height as u64 > MAX_PIXELS => {
@@ -291,6 +288,13 @@ mod tests {
     fn tiny_png() -> Vec<u8> {
         let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
         bytes.extend_from_slice(&[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0]);
+        bytes
+    }
+
+    /// A JPEG start and frame header for a 1x1 image.
+    fn tiny_jpeg() -> Vec<u8> {
+        let mut bytes = vec![0xFF, 0xD8, 0xFF, 0xC0, 0, 11, 8, 0, 1, 0, 1, 1];
+        bytes.extend_from_slice(&[1, 0x11, 0]);
         bytes
     }
 
@@ -379,12 +383,16 @@ mod tests {
         ] {
             assert!(portrait_user_id(bad).is_err(), "{bad}");
         }
+        let jpeg = tiny_jpeg();
+        assert_eq!(check_portrait("1.jpg", &jpeg, jpeg.len()), Ok(()));
+        assert_eq!(check_portrait("1.JPEG", &jpeg, jpeg.len()), Ok(()));
+        // Net2 takes a PNG but shows nothing, so a PNG is always converted.
         let png = tiny_png();
-        assert_eq!(check_portrait("1.png", &png, png.len()), Ok(()));
+        assert!(check_portrait("1.png", &png, png.len()).is_err());
         assert!(check_portrait("1.jpg", &png, png.len()).is_err());
-        assert!(check_portrait("1.png", &[0xFF, 0xD8, 0xFF], 3).is_err());
-        assert!(check_portrait("1.png", &png, 0).is_err());
-        assert!(check_portrait("1.png", &png, MAX_IMAGE_BYTES + 1).is_err());
+        assert!(check_portrait("1.png", &jpeg, jpeg.len()).is_err());
+        assert!(check_portrait("1.jpg", &jpeg, 0).is_err());
+        assert!(check_portrait("1.jpg", &jpeg, MAX_IMAGE_BYTES + 1).is_err());
         assert_eq!(fit(1024, 1024), (1024, 1024));
         assert_eq!(fit(4000, 3000), (1200, 900));
         assert_eq!(fit(3000, 4001), (900, 1200));

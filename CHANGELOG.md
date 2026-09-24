@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A wrong operator name or password at sign-in said "Not signed in to Net2.
   Connect again.", which reads like an expired session. It now says "Net2
   didn't accept the operator name or password."
+- PNG portraits uploaded without an error but showed no picture in Net2. Net2
+  stores a PNG and displays only JPGs, so every PNG is now converted to a JPG
+  in the browser first. JPGs within Net2's limits still upload unchanged.
 
 ### Documentation
 

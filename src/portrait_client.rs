@@ -259,8 +259,8 @@ async fn choose(state: Rc<RefCell<State>>) {
             Err(message) => row.fail(message),
         }
         if row.id.is_some() {
-            // A JPG or PNG Net2 accepts goes up untouched; anything else is
-            // converted, so the operator never has to.
+            // A JPG Net2 accepts goes up untouched; anything else, a PNG
+            // included, is converted, so the operator never has to.
             let as_is = match header(&file).await {
                 Some(bytes) => check_portrait(&row.filename, &bytes, file.size() as usize).is_ok(),
                 None => false,
