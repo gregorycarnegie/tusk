@@ -284,3 +284,46 @@ async fn check_icon() -> topcoat::Result<impl View> {
         </svg>
     })
 }
+
+#[cfg(test)]
+mod tests {
+    /// `client::element` panics on an id the page does not have, so check
+    /// every id the browser code looks up by name. Ids that reach `element`
+    /// through a loop are not seen here; tests/static_site.py covers those.
+    #[test]
+    fn every_element_the_browser_code_looks_up_is_in_the_page() {
+        let html = super::render().unwrap();
+        let sources = [
+            include_str!("client.rs"),
+            include_str!("batch_client.rs"),
+            include_str!("net2_client.rs"),
+            include_str!("portrait_client.rs"),
+        ];
+        let mut checked = 0;
+        for source in sources {
+            for call in [
+                "element(\"",
+                "on_click(\"",
+                "input(\"",
+                "button(\"",
+                "disabled(\"",
+            ] {
+                for (at, _) in source.match_indices(call) {
+                    // create_element("tr") is not a lookup
+                    if source[..at].ends_with(|c: char| c == '_' || c.is_alphanumeric()) {
+                        continue;
+                    }
+                    let rest = &source[at + call.len()..];
+                    let id = &rest[..rest.find('"').unwrap()];
+                    assert!(
+                        html.contains(&format!("id=\"{id}\"")),
+                        "no #{id} in the page"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        // A pattern that stopped matching would pass silently otherwise.
+        assert!(checked > 50, "only {checked} lookups found");
+    }
+}

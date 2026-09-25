@@ -74,6 +74,7 @@ pub(crate) fn on_click(id: &str, f: impl FnMut() + 'static) {
 #[cfg_attr(not(test), wasm_bindgen(start))]
 #[cfg_attr(test, wasm_bindgen)]
 pub fn start() {
+    std::panic::set_hook(Box::new(|info| crashed(&info.to_string())));
     let state = Rc::new(RefCell::new(State {
         on_change: render,
         ..State::default()
@@ -157,6 +158,28 @@ pub fn start() {
     });
 }
 
+/// A panic stops the wasm for good and, left alone, the page just freezes.
+/// Say so where the operator is looking. This must not panic itself, so no
+/// `element`, and nothing that borrows `State`, which may be mid-borrow.
+pub(crate) fn crashed(details: &str) {
+    web_sys::console::error_1(&details.into());
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    // The Portraits tab hides the status line.
+    if let Some(panel) = document.get_element_by_id("reader-panel") {
+        let _ = panel.remove_attribute("hidden");
+    }
+    if let Some(status) = document.get_element_by_id("status") {
+        let _ = status.set_attribute("data-tone", Tone::Problem.name());
+    }
+    if let Some(message) = document.get_element_by_id("message") {
+        message.set_text_content(Some(&format!(
+            "Tusk hit a bug and stopped. Reload the page to carry on. ({details})"
+        )));
+    }
+}
+
 fn toggle_theme() {
     let window = web_sys::window().unwrap();
     let Some(root) = window.document().and_then(|d| d.document_element()) else {
@@ -174,5 +197,27 @@ fn toggle_theme() {
     let _ = root.set_attribute("data-theme", next);
     if let Ok(Some(storage)) = window.local_storage() {
         let _ = storage.set_item("theme", next);
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod tests {
+    use wasm_bindgen_test::*;
+
+    #[wasm_bindgen_test]
+    fn a_crash_is_shown_even_on_the_portraits_tab() {
+        // Inside a div of its own: the test runner reports through the body.
+        let document = web_sys::window().unwrap().document().unwrap();
+        let page = document.create_element("div").unwrap();
+        page.set_inner_html(
+            r#"<section id="reader-panel" hidden=""><p id="status" data-tone="ready"><span id="message">Ready</span></p></section>"#,
+        );
+        document.body().unwrap().append_child(&page).unwrap();
+        super::crashed("boom");
+        let html = page.inner_html();
+        page.remove();
+        assert!(!html.contains("hidden"), "{html}");
+        assert!(html.contains(r#"data-tone="problem""#), "{html}");
+        assert!(html.contains("stopped") && html.contains("boom"), "{html}");
     }
 }

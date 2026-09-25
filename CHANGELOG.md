@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A bug in Tusk froze the page without a word. The status line now says Tusk
+  stopped and to reload, on any tab, and the details go to the console.
+- A sign-in reply whose access token could not go in a request header, such
+  as one with a space or line break, crashed the page at the first request.
+  Sign-in now refuses it instead.
+
 ## [0.4.2] - 2026-09-24
 
 ### Fixed

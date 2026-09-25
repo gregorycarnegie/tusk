@@ -30,8 +30,9 @@ and ignored by Git. There is no application server to deploy.
 ## Running the tests
 
 ```sh
-cargo test   # protocol, token decoding, and the CSV assignment queue
-cargo w      # the polling loop, in headless Chrome
+cargo test   # protocol, token decoding, the CSV queue, Net2 replies and portrait
+             # rules, and that every element the browser code looks up is in the page
+cargo w      # the polling loop and the crash message, in headless Chrome
 python tests/static_site.py  # after building dist; needs Chrome and chromedriver
 ```
 

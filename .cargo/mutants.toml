@@ -3,6 +3,9 @@
 # The host is the default target (.cargo/config.toml), which is what these
 # tests need, so there is no triple to name here.
 
+# Mutating test helpers only measures the tests against themselves.
+exclude_re = ["tests::"]
+
 exclude_globs = [
     # Only the browser tests reach this, and this config runs the host ones.
     # Measure it on its own, in headless Chrome, with every mutant in tests::
@@ -16,7 +19,7 @@ exclude_globs = [
     "src/main.rs",
 ]
 
-# Known equivalent survivors (September 2026, 116 caught / 5 missed / 1 timeout).
+# Known equivalent survivors (September 2026, 280 caught / 5 missed / 1 timeout).
 # Left in the run rather than excluded, since line numbers move:
 #   frame     mask(.., buf[3..len - 1]) -> len / 1: the extra byte masked is
 #             the checksum slot, which the next line overwrites

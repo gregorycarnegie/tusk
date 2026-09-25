@@ -296,4 +296,36 @@ mod tests {
         assert!(token(Read::Mifare, &empty).is_none());
         assert!(token(Read::Hitag2, &empty).is_none());
     }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Whatever the reader sends, decoding it cannot take the page down,
+        /// and any number found is one Net2 could show.
+        #[test]
+        fn no_reply_makes_decoding_panic(bytes in prop::collection::vec(any::<u8>(), 0..=41)) {
+            if let Some(reply) = parse(&bytes) {
+                for read in [Read::Mifare, Read::Hitag2] {
+                    if let Some(t) = token(read, &reply) {
+                        prop_assert!(t.number < 100_000_000);
+                    }
+                }
+            }
+        }
+
+        /// The same, with every frame well formed, so the decoders see far
+        /// more payloads than the checksum would otherwise let through.
+        #[test]
+        fn any_read_payload_decodes_to_an_eight_digit_number_or_nothing(
+            payload in prop::collection::vec(any::<u8>(), 16..=35),
+        ) {
+            let reply = parse(&frame(ADDR, ACK, &payload)).expect("must parse");
+            for read in [Read::Mifare, Read::Hitag2] {
+                if let Some(t) = token(read, &reply) {
+                    prop_assert!(t.number < 100_000_000);
+                    prop_assert!(read == Read::Mifare || t.number > 0);
+                }
+            }
+        }
+    }
 }

@@ -117,6 +117,17 @@ pub fn sign_in_failure(mut problem: Failure) -> Failure {
     problem
 }
 
+/// The sign-in reply's access token. It goes into an Authorization header,
+/// where anything but visible ASCII makes the browser throw.
+pub fn access_token(reply: &str) -> Option<String> {
+    serde_json::from_str::<Value>(reply)
+        .ok()?
+        .get("access_token")?
+        .as_str()
+        .filter(|token| !token.is_empty() && token.bytes().all(|b| b.is_ascii_graphic()))
+        .map(str::to_string)
+}
+
 /// Net2 documents camelCase but its examples are PascalCase; accept either.
 fn field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
     value.get(key).or_else(|| {
@@ -291,11 +302,17 @@ mod tests {
         bytes
     }
 
-    /// A JPEG start and frame header for a 1x1 image.
-    fn tiny_jpeg() -> Vec<u8> {
-        let mut bytes = vec![0xFF, 0xD8, 0xFF, 0xC0, 0, 11, 8, 0, 1, 0, 1, 1];
-        bytes.extend_from_slice(&[1, 0x11, 0]);
+    /// A JPEG start and frame header, which is all `imagesize` reads.
+    fn jpeg(width: u16, height: u16) -> Vec<u8> {
+        let mut bytes = vec![0xFF, 0xD8, 0xFF, 0xC0, 0, 11, 8];
+        bytes.extend_from_slice(&height.to_be_bytes());
+        bytes.extend_from_slice(&width.to_be_bytes());
+        bytes.extend_from_slice(&[1, 1, 0x11, 0]);
         bytes
+    }
+
+    fn tiny_jpeg() -> Vec<u8> {
+        jpeg(1, 1)
     }
 
     #[test]
@@ -401,5 +418,142 @@ mod tests {
             duplicate_flags(&[Some(1), Some(2), Some(1), None, None]),
             [true, false, true, false, false]
         );
+    }
+
+    #[test]
+    fn the_size_limits_are_net2s_to_the_byte_and_pixel() {
+        let small = tiny_jpeg();
+        assert_eq!(check_portrait("1.jpg", &small, 3_670_016), Ok(()));
+        assert!(check_portrait("1.jpg", &small, 3_670_017).is_err());
+        // 40 megapixels exactly is allowed; one row more is not
+        let forty = jpeg(8000, 5000);
+        assert_eq!(check_portrait("1.jpg", &forty, forty.len()), Ok(()));
+        let over = jpeg(8000, 5001);
+        assert!(check_portrait("1.jpg", &over, over.len()).is_err());
+        // a JPEG start with no readable frame header
+        assert!(check_portrait("1.jpg", &[0xFF, 0xD8, 0xFF], 3).is_err());
+    }
+
+    #[test]
+    fn each_refusal_says_what_net2_meant() {
+        for (status, words) in [
+            (400, "refused"),
+            (403, "permission"),
+            (404, "Not found"),
+            (413, "larger"),
+            (429, "Wait a minute"),
+            (500, "HTTP 500"),
+        ] {
+            let problem = status_failure(status, None, false, "");
+            assert!(
+                problem.message.contains(words),
+                "{status}: {}",
+                problem.message
+            );
+            assert_eq!(problem.halt, matches!(status, 403 | 429), "{status}");
+            assert!(!problem.expired, "{status}");
+        }
+        // A 4xx on a write was answered, so it did not half-happen.
+        assert!(!status_failure(404, None, true, "").uncertain);
+        let long = format!(r#"{{"message":"{}"}}"#, "x".repeat(2000));
+        assert_eq!(
+            status_failure(400, None, false, &long)
+                .message
+                .chars()
+                .count(),
+            600
+        );
+    }
+
+    #[test]
+    fn only_a_usable_access_token_signs_in() {
+        assert_eq!(
+            access_token(r#"{"access_token":"abc.DEF-123_=","expires_in":3600}"#).as_deref(),
+            Some("abc.DEF-123_=")
+        );
+        for bad in [
+            r#"{"access_token":""}"#,
+            r#"{"access_token":"two words"}"#,
+            r#"{"access_token":"line\nbreak"}"#,
+            r#"{"access_token":"café"}"#,
+            r#"{"access_token":42}"#,
+            r#"{"token":"abc"}"#,
+            "<html>sign in</html>",
+        ] {
+            assert_eq!(access_token(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_middle_name_is_part_of_the_name_and_no_name_is_said_so() {
+        let user = |first: &str, middle: &str, last: &str| User {
+            id: 1,
+            first: first.into(),
+            middle: middle.into(),
+            last: last.into(),
+            has_image: false,
+        };
+        assert_eq!(user("Ada", "King", "Lovelace").name(), "Ada King Lovelace");
+        assert_eq!(user("", "", "Lovelace").name(), "Lovelace");
+        assert_eq!(user("", "", "").name(), "(No name)");
+        assert_eq!(read_departments("not json"), vec![]);
+        assert!(read_cards("{}").is_err());
+    }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn a_fitted_photo_is_never_enlarged_or_distorted(width in 1u32..100_000, height in 1u32..100_000) {
+            let (w, h) = fit(width, height);
+            prop_assert!(w >= 1 && h >= 1 && w <= width && h <= height);
+            let longest = width.max(height);
+            prop_assert_eq!(w.max(h), longest.min(MAX_EDGE));
+            // each side is its share of MAX_EDGE, rounded, or 1 at the least
+            let scale = f64::from(w.max(h)) / f64::from(longest);
+            prop_assert!((f64::from(w) - f64::from(width) * scale).abs() <= 1.0);
+            prop_assert!((f64::from(h) - f64::from(height) * scale).abs() <= 1.0);
+        }
+
+        #[test]
+        fn any_positive_id_names_its_own_file(id in 1..=i32::MAX, ext in "(jpg|JPG|jpeg|png|webp)") {
+            prop_assert_eq!(portrait_user_id(&format!("{id}.{ext}")), Ok(id));
+            let padded = format!("0{id}.{ext}");
+            prop_assert!(portrait_user_id(&padded).is_err());
+        }
+
+        /// Whatever is typed, the result is a bare https origin, and cleaning
+        /// it again changes nothing.
+        #[test]
+        fn an_accepted_origin_is_already_clean(typed in r"\s?(https?://)?[A-Za-z0-9.:@/?#\-]{0,20}\s?") {
+            if let Ok(origin) = parse_origin(&typed) {
+                let host = origin.strip_prefix("https://").unwrap();
+                prop_assert!(!host.is_empty() && !host.contains(['/', '@', '?', '#']));
+                prop_assert_eq!(host, host.to_ascii_lowercase());
+                prop_assert_eq!(parse_origin(&origin), Ok(origin.clone()));
+            }
+        }
+
+        #[test]
+        fn a_refusal_never_repeats_the_access_token(
+            status in 400u16..600,
+            token in "[A-Z0-9]{12,40}",
+            detail in "[a-z ]{0,20}",
+        ) {
+            let body = format!(r#"{{"access_token":"{token}","refresh_token":"{token}","error":"{detail}"}}"#);
+            let problem = status_failure(status, None, true, &body);
+            prop_assert!(!problem.message.contains(&token));
+        }
+
+        /// Replies come from a server Tusk does not control.
+        #[test]
+        fn no_reply_or_file_header_makes_it_panic(text in ".{0,200}", bytes in prop::collection::vec(any::<u8>(), 0..200)) {
+            let _ = (read_user(&text, 1), read_users(&text), read_cards(&text), read_departments(&text));
+            let _ = (access_token(&text), status_failure(500, Some(&text), true, &text));
+            let _ = check_portrait("1.jpg", &bytes, bytes.len());
+            let mut jpeg = vec![0xFF, 0xD8, 0xFF];
+            jpeg.extend(&bytes);
+            let _ = check_portrait("1.jpg", &jpeg, jpeg.len());
+        }
     }
 }

@@ -14,8 +14,8 @@ use crate::{
     batch::Batch,
     client::{element, on_click},
     net2::{
-        Failure, UNCERTAIN_WRITE, failure, parse_origin, read_cards, read_departments, read_users,
-        sign_in_failure, status_failure,
+        Failure, UNCERTAIN_WRITE, access_token, failure, parse_origin, read_cards,
+        read_departments, read_users, sign_in_failure, status_failure,
     },
     reader::{Session, State, Tone, Tool},
 };
@@ -258,17 +258,13 @@ async fn connect(state: Rc<RefCell<State>>) {
     let token = fetch(&origin, None, "POST", "/authorization/tokens", body)
         .await
         .and_then(|reply| {
-            serde_json::from_str::<Value>(&reply)
-                .ok()
-                .and_then(|reply| Some(reply.get("access_token")?.as_str()?.to_string()))
-                .filter(|token| !token.is_empty())
-                .ok_or_else(|| {
-                    failure(
-                        "Net2 did not return an access token. Accounts that need a second sign-in step are not supported yet.",
-                        false,
-                        false,
-                    )
-                })
+            access_token(&reply).ok_or_else(|| {
+                failure(
+                    "Net2 did not return an access token. Accounts that need a second sign-in step are not supported yet.",
+                    false,
+                    false,
+                )
+            })
         });
     let token = match token.map_err(sign_in_failure) {
         Ok(token) => token,

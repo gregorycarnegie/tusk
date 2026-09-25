@@ -494,4 +494,193 @@ mod tests {
             "User ID,First name,Surname,Card Number\r\n8,Jane,Doe,\r\n9,(No name),,34935097\r\n"
         ));
     }
+
+    fn card(n: u32) -> Token {
+        Token {
+            read: Read::Mifare,
+            hex: format!("{n:08X}"),
+            number: n,
+        }
+    }
+
+    fn queue(rows: &str) -> Batch {
+        let csv = format!("Surname,First name,Card Number\n{rows}");
+        Batch::parse(csv.as_bytes(), false, Format::Decimal).unwrap()
+    }
+
+    #[test]
+    fn a_paused_queue_ignores_taps() {
+        let mut batch = queue("Doe,Jane,\nRoe,John,\n");
+        batch.observe(Some(&card(1)));
+        assert_eq!(batch.assigned_count(), 0);
+        batch.resume(None);
+        batch.running = false;
+        batch.observe(None);
+        batch.observe(Some(&card(1)));
+        assert_eq!(batch.assigned_count(), 0);
+    }
+
+    #[test]
+    fn skipping_or_undoing_in_a_csv_queue_is_unsaved_work() {
+        let mut batch = queue("Doe,Jane,\nRoe,John,\n");
+        batch.resume(None);
+        batch.skip();
+        assert!(batch.dirty && batch.running);
+        assert_eq!(batch.current(), Some(1));
+        batch.dirty = false;
+        batch.undo();
+        assert!(batch.dirty && !batch.running);
+        assert_eq!(batch.current(), Some(0));
+        batch.skip();
+        batch.skip();
+        assert!(!batch.running, "nobody left to tap for");
+    }
+
+    #[test]
+    fn a_refusal_that_stops_the_run_pauses_even_with_people_left() {
+        let users: Vec<User> = (1..=3)
+            .map(|id| User {
+                id,
+                first: "A".into(),
+                middle: String::new(),
+                last: id.to_string(),
+                has_image: false,
+            })
+            .collect();
+        let mut batch = Batch::from_users(&users, false).unwrap();
+        batch.resume(None);
+        batch.observe(Some(&card(1)));
+        batch.refused("Rate limited.".into(), false, false, true);
+        assert!(!batch.running);
+        assert_eq!(batch.current(), Some(0), "not saved, so still next");
+        assert_eq!(batch.notice, "Rate limited.");
+        batch.resume(None);
+        batch.observe(None);
+        batch.observe(Some(&card(1)));
+        batch.refused("Busy.".into(), false, false, false);
+        assert!(batch.running);
+        // a refusal with nothing staged changes nothing
+        batch.refused("Stray.".into(), true, true, true);
+        assert!(batch.running && batch.notice == "Busy.");
+    }
+
+    #[test]
+    fn a_net2_user_with_only_a_surname_keeps_it() {
+        let only_surname = User {
+            id: 5,
+            first: String::new(),
+            middle: String::new(),
+            last: "Roe".into(),
+            has_image: false,
+        };
+        let batch = Batch::from_users(&[only_surname], false).unwrap();
+        assert_eq!(batch.name(0), "Roe");
+        assert!(Batch::from_users(&[], false).is_err());
+    }
+
+    #[test]
+    fn hex_numbers_match_whatever_their_case_or_leading_zeros() {
+        let mut batch = Batch::parse(
+            b"Surname,First name,Card Number\nDoe,Jane,\nKept,Old,005b7d4039\n",
+            false,
+            Format::Hex,
+        )
+        .unwrap();
+        batch.resume(None);
+        batch.observe(Some(&card(0x5B7D4039)));
+        assert_eq!(batch.assigned_count(), 0);
+        assert!(batch.notice.contains("Old Kept"));
+    }
+
+    #[test]
+    fn a_csv_must_name_each_column_once_and_stay_a_manageable_size() {
+        let twice = "Surname,First name,Card Number,card number\nDoe,Jane,,\n";
+        assert!(Batch::parse(twice.as_bytes(), false, Format::Decimal).is_err());
+        let rows = |n: usize| {
+            let mut csv = "Surname,First name,Card Number\n".to_string();
+            csv.push_str(&"Doe,Jane,\n".repeat(n));
+            Batch::parse(csv.as_bytes(), false, Format::Decimal)
+        };
+        assert_eq!(rows(10_000).unwrap().rows.len(), 10_000);
+        assert!(rows(10_001).is_err());
+    }
+
+    use proptest::prelude::*;
+
+    #[derive(Clone, Debug)]
+    enum Op {
+        Start,
+        Tap(u32),
+        Lift,
+        Skip,
+        Undo,
+    }
+
+    fn op() -> impl Strategy<Value = Op> {
+        prop_oneof![
+            Just(Op::Start),
+            (0u32..6).prop_map(Op::Tap),
+            Just(Op::Lift),
+            Just(Op::Skip),
+            Just(Op::Undo),
+        ]
+    }
+
+    proptest! {
+        /// Whatever the operator does, and in whatever order, a card never
+        /// ends up with two people, including the numbers already in the CSV.
+        #[test]
+        fn a_card_never_belongs_to_two_people(ops in prop::collection::vec(op(), 0..60)) {
+            let mut batch = queue("A,A,\nB,B,\nC,C,00000003\nD,D,\nE,E,\n");
+            let mut on_reader = None;
+            for op in ops {
+                match op {
+                    Op::Start => batch.resume(on_reader.as_ref()),
+                    Op::Tap(n) => on_reader = Some(card(n)),
+                    Op::Lift => on_reader = None,
+                    Op::Skip => batch.skip(),
+                    Op::Undo => batch.undo(),
+                }
+                batch.observe(on_reader.as_ref());
+                let values: Vec<u32> = (0..batch.rows.len())
+                    .filter_map(|i| batch.value(i).parse().ok())
+                    .collect();
+                for (i, value) in values.iter().enumerate() {
+                    prop_assert!(!values[i + 1..].contains(value), "{value} twice: {values:?}");
+                }
+                prop_assert_eq!(batch.value(2), "00000003");
+            }
+        }
+
+        /// Names, notes and card numbers survive a trip through the tool
+        /// untouched, whatever commas, quotes or line breaks they hold.
+        #[test]
+        fn a_downloaded_csv_reads_back_as_it_was_loaded(
+            rows in prop::collection::vec(
+                ("[A-Za-z]{1,8}", r#"(\PC|[,"\r\n]){0,12}"#, "[0-9]{0,8}", r#"(\PC|[,"\r\n]){0,12}"#),
+                1..20,
+            ),
+            bom: bool,
+        ) {
+            let mut writer = csv::Writer::from_writer(Vec::new());
+            writer.write_record(["First name", "Surname", "Card Number", "Notes"]).unwrap();
+            for (first, surname, number, notes) in &rows {
+                writer.write_record([first, surname, number, notes]).unwrap();
+            }
+            let mut input = if bom { b"\xef\xbb\xbf".to_vec() } else { vec![] };
+            input.extend(writer.into_inner().unwrap());
+            let batch = Batch::parse(&input, false, Format::Decimal).unwrap();
+            let exported = batch.export().unwrap();
+            prop_assert_eq!(exported.starts_with(b"\xef\xbb\xbf"), bom);
+            let reread = Batch::parse(&exported, false, Format::Decimal).unwrap();
+            for (row, (first, surname, number, notes)) in reread.rows.iter().zip(&rows) {
+                prop_assert_eq!(&row.fields, &[first.clone(), surname.clone(), number.clone(), notes.clone()]);
+            }
+        }
+
+        #[test]
+        fn no_file_makes_parsing_panic(bytes in prop::collection::vec(any::<u8>(), 0..300)) {
+            let _ = Batch::parse(&bytes, false, Format::Decimal);
+        }
+    }
 }
