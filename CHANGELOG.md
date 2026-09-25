@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-09-25
+
 ### Added
 
 - The header shows Tusk's version next to its name.
@@ -243,7 +245,8 @@ because each was a wrong assumption worth remembering:
   reports.
 - Tokens are assumed to be 4 to 8 bytes. Longer ones would be ignored.
 
-[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/gregorycarnegie/tusk/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/gregorycarnegie/tusk/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/gregorycarnegie/tusk/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/gregorycarnegie/tusk/compare/v0.3.0...v0.4.0
