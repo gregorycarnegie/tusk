@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The header shows Tusk's version next to its name.
+
 ### Fixed
 
 - A bug in Tusk froze the page without a word. The status line now says Tusk

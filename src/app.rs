@@ -30,7 +30,7 @@ fn page(cx: &Cx) -> impl View {
         </head>
         <body>
         <header class="top">
-            <span class="brand">tusk_icon() "Tusk"</span>
+            <span class="brand">tusk_icon() "Tusk" <span class="version">(concat!("v", env!("CARGO_PKG_VERSION")))</span></span>
             <nav>
                 <a class="icon-button" href=(REPO_URL) aria-label="Source code on GitHub" title="Source code on GitHub">github_icon()</a>
                 <button id="theme" class="icon-button" aria-label="Switch between light and dark" title="Switch between light and dark">theme_icon()</button>
