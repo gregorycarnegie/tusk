@@ -15,8 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is one fixed query through Net2's `customquery/querydb`, joining `sdk.Cards`
   to `sdk.UsersEx`, with only the card number put into it. The idea of
   querying Net2's own views comes from greboid/net2 and the HelloID
-  connector; the columns were read from a real Net2. Tested against the
-  stand-in Net2 only.
+  connector. The columns and the query's reply were checked on a real Net2;
+  the reader side is tested against the stand-in Net2 only.
 
 ## [0.5.0-beta.1] - 2026-10-02
 

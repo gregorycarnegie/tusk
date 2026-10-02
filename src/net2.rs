@@ -563,6 +563,12 @@ mod tests {
     fn a_card_lookup_says_who_holds_it_and_whether_it_is_lost() {
         let query = owner_query(34935097);
         assert!(query.ends_with("WHERE c.CardNumber = 34935097 ORDER BY c.LostCard"));
+        // Net2's own reply to this query, for card 54447157, on 2026-10-02.
+        let real = r#"[{"lost":false,"userid":2,"firstname":"Amara","middlename":"","surname":"Okafor","department":"Year 7"}]"#;
+        assert_eq!(
+            describe_owners(real).as_deref(),
+            Ok("In Net2: Amara Okafor (user 2) · Year 7")
+        );
         // The shape Net2 sent for sdk.Cards on 2026-10-02, with Tusk's aliases.
         let reply = r#"[
             {"lost":false,"userid":8,"firstname":"Jane","middlename":null,"surname":"Doe","department":"Year 7"},
