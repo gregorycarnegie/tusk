@@ -85,12 +85,12 @@ fn page(cx: &Cx) -> impl View {
             <section id="reading" class="reading empty" aria-label="Card reader">
                 <div class="stage">
                     <div class="credential" aria-live="polite">
+                        antenna_art()
                         <div class="cred-row">
                             <span class="cred-label">"Net2 token"</span>
                             <span id="kind" class="chip" hidden=""></span>
                             contactless_icon()
                         </div>
-                        chip_art()
                         <p id="number" class="number">"--------"</p>
                         <div class="cred-row">
                             <span id="prompt" class="cred-prompt">"Present a card to the reader"</span>
@@ -312,12 +312,18 @@ async fn portrait_tool() -> topcoat::Result<impl View> {
     })
 }
 
+/// What is inside a MIFARE card, seen through the plastic: a copper coil
+/// around the edge and the chip die bonded to its ends. A contactless card has
+/// no contact pad on its face; that gold square belongs to bank cards.
 #[component]
-async fn chip_art() -> topcoat::Result<impl View> {
+async fn antenna_art() -> topcoat::Result<impl View> {
     Ok(view! {
-        <svg class="chip-art" viewBox="0 0 44 34" aria-hidden="true">
-            <rect x=".5" y=".5" width="43" height="33" rx="6"></rect>
-            <path d="M15 .5v33M29 .5v33M.5 12H15M29 12h14.5M.5 22H15M29 22h14.5M15 17h14"></path>
+        <svg class="antenna" viewBox="0 0 856 540" preserveAspectRatio="none" aria-hidden="true">
+            for inset in [34, 46, 58, 70] {
+                <rect x=(inset) y=(inset) width=(856 - 2 * inset) height=(540 - 2 * inset) rx="26"></rect>
+            }
+            <path d="M822 400H744M786 416H744"></path>
+            <rect class="die" x="714" y="392" width="30" height="30" rx="3"></rect>
         </svg>
     })
 }

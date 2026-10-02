@@ -23,7 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A new design that uses the whole screen. The reader and Net2 connections
   sit under the header on every tab, and Net2 sign-in opens as a sheet from
   any of them, rather than from two of the three tools. The token shows on a
-  drawn access card that a scan line sweeps while the reader waits; the card
+  drawn white MIFARE access card, with its slot punch and the antenna coil
+  showing through, that a scan line sweeps while the reader waits; the card
   holder and copy buttons sit beside it. Batch assign and Portraits put their
   settings in a rail on the left and the queue or photos on the right, with
   a progress bar for the queue. On a phone a loaded queue comes before its

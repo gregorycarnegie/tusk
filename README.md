@@ -26,9 +26,9 @@ Net2 before relying on it.
 │ Tusk v0.5.0      [Read a card] [Batch assign] [Portraits]        │
 │ READER ● Ready - present a token   NET2 ● Connected  (Disconnect)│
 ├──────────────────────────────────────────────────────────────────┤
-│  ╭───────────────────────────╮   CARD HOLDER                     │
+│  ╭────────────(═══)──────────╮   CARD HOLDER                     │
 │  │ NET2 TOKEN  MIFARE     )) │   Jane Doe (user 8) · Year 7      │
-│  │ ▣                         │                                   │
+│  │                           │                                   │
 │  │ 34935097                  │   COPY                            │
 │  │ 5B7D4039                  │   [Net2 number]  [Raw hex]        │
 │  ╰───────────────────────────╯                                   │
