@@ -136,7 +136,11 @@ async fn batch_tool() -> topcoat::Result<impl View> {
                     <p class="hint">"Each card is saved to its person in Net2 the moment it is tapped, as a Net2 decimal number. Download CSV still gives you a record of the session."</p>
                 </div>
                 <label class="checkbox"><input id="batch-replace" type="checkbox">"Give new cards to people who already have one"</label>
-                <p class="hint">"Applies to the next people you load. Otherwise they keep their card. In a CSV the Card Number is replaced; in Net2 the new card is added and the old one keeps working until you remove it there."</p>
+                <p class="hint">"Applies to the next people you load. Otherwise they keep their card. In a CSV the Card Number is replaced; in Net2 the new card is added and the old one keeps working unless you mark it lost."</p>
+                <div id="batch-retire-option" hidden="">
+                    <label class="checkbox"><input id="batch-retire" type="checkbox">"Mark their old cards lost"</label>
+                    <p class="hint">"With new cards for people who already have one: once the new card is saved, their other cards are marked lost in Net2."</p>
+                </div>
                 <label for="batch-format">"Card number format"</label>
                 <select id="batch-format">
                     <option value="decimal" selected="">"Net2 decimal (recommended)"</option>

@@ -14,8 +14,8 @@ use crate::{
     batch::Batch,
     client::{element, on_click},
     net2::{
-        Failure, UNCERTAIN_WRITE, access_token, failure, parse_origin, read_cards,
-        read_departments, read_users, sign_in_failure, status_failure,
+        Failure, UNCERTAIN_WRITE, access_token, failure, lost_tokens, parse_origin, read_cards,
+        read_departments, read_users, refresh_token, sign_in_failure, status_failure,
     },
     reader::{Session, State, Tone, Tool},
 };
@@ -106,7 +106,53 @@ async fn fetch(
     Ok(text)
 }
 
-/// A request as the signed-in operator. A refused token signs the page out.
+/// A sign-in body. A form post is a CORS simple request: no preflight. Net2's
+/// nginx allows one sign-in request per 500 ms from anywhere but loopback, so
+/// a preflight followed by a JSON post always gets a 429 the page cannot see.
+fn form(fields: &[(&str, &str)]) -> Option<(&'static str, String)> {
+    let body = fields
+        .iter()
+        .filter(|(_, value)| !value.is_empty())
+        .map(|(key, value)| format!("{key}={}", js_sys::encode_uri_component(value)))
+        .collect::<Vec<_>>()
+        .join("&");
+    Some(("application/x-www-form-urlencoded", body))
+}
+
+/// A session whose token is not `stale`: one another request already renewed,
+/// or a new one from the refresh token. None if signed out meanwhile or Net2
+/// will not renew, so a Disconnect is never undone by a late reply.
+async fn renewed(state: &Rc<RefCell<State>>, stale: &str) -> Option<Session> {
+    let current = state.borrow().net2.clone()?;
+    if current.token != stale {
+        return Some(current);
+    }
+    let refresh = current.refresh.as_deref()?;
+    let (client_id, secret) = &current.client;
+    let body = form(&[
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh),
+        ("client_id", client_id),
+        ("client_secret", secret),
+    ]);
+    let reply = fetch(&current.origin, None, "POST", "/authorization/tokens", body)
+        .await
+        .ok()?;
+    let session = Session {
+        token: access_token(&reply)?,
+        refresh: refresh_token(&reply).or_else(|| current.refresh.clone()),
+        ..current
+    };
+    let mut state = state.borrow_mut();
+    if state.net2.as_ref()?.token == stale {
+        state.net2 = Some(session);
+    }
+    state.net2.clone()
+}
+
+/// A request as the signed-in operator. An expired token is renewed and the
+/// request tried once more: Net2 refused the first, so nothing is sent twice.
+/// A token that cannot be renewed signs the page out.
 pub async fn call(
     state: &Rc<RefCell<State>>,
     method: &str,
@@ -114,11 +160,16 @@ pub async fn call(
     body: Option<&Value>,
 ) -> Result<String, Failure> {
     let session = state.borrow().net2.clone();
-    let Some(Session { origin, token }) = session else {
+    let Some(Session { origin, token, .. }) = session else {
         return Err(failure("Connect to Net2 first.", false, true));
     };
     let body = body.map(|body| ("application/json", body.to_string()));
-    let result = fetch(&origin, Some(&token), method, path, body).await;
+    let mut result = fetch(&origin, Some(&token), method, path, body.clone()).await;
+    if result.as_ref().is_err_and(|problem| problem.expired)
+        && let Some(session) = renewed(state, &token).await
+    {
+        result = fetch(&session.origin, Some(&session.token), method, path, body).await;
+    }
     if result.as_ref().is_err_and(|problem| problem.expired) {
         crate::portrait_client::forget_matches();
         let mut state = state.borrow_mut();
@@ -175,18 +226,39 @@ async fn save_card(state: Rc<RefCell<State>>) {
     let token_type = element("batch-token-type")
         .unchecked_into::<HtmlSelectElement>()
         .value();
+    let retire = replace
+        && element("batch-retire")
+            .unchecked_into::<HtmlInputElement>()
+            .checked();
     let outcome = async {
         // Net2 is asked at the moment of writing, so the answer is current.
-        if !replace {
-            let cards = read_cards(&call(&state, "GET", &path, None).await?)
-                .map_err(|message| failure(message, false, false))?;
-            if let Some(card) = cards.into_iter().next() {
-                return Ok(Some(card));
+        let mut old = Vec::new();
+        if !replace || retire {
+            let reply = call(&state, "GET", &path, None).await?;
+            let unreadable = |message| failure(message, false, false);
+            if !replace
+                && let Some(card) = read_cards(&reply).map_err(unreadable)?.into_iter().next()
+            {
+                return Ok(Err(card));
             }
+            old = lost_tokens(&reply, &value).map_err(unreadable)?;
         }
         let token = json!({ "tokenType": token_type, "tokenValue": value, "isLost": false });
         call(&state, "POST", &path, Some(&token)).await?;
-        Ok::<_, Failure>(None)
+        // The new card is in, so a failure from here on still counts as saved:
+        // the person has both cards rather than neither.
+        let mut retired = String::new();
+        for (token_id, card, body) in old {
+            let marked = call(&state, "PUT", &format!("{path}/{token_id}"), Some(&body)).await;
+            retired.push_str(&match marked {
+                Ok(_) => format!(" Old card {card} is marked lost."),
+                Err(problem) => format!(
+                    " Old card {card} was not marked lost: {} Mark it lost in Net2.",
+                    problem.message
+                ),
+            });
+        }
+        Ok::<_, Failure>(Ok(retired))
     }
     .await;
     SAVING.set(false);
@@ -195,8 +267,11 @@ async fn save_card(state: Rc<RefCell<State>>) {
         && batch.sending_to().is_some_and(|(staged, ..)| staged == id)
     {
         match outcome {
-            Ok(None) => batch.saved(),
-            Ok(Some(card)) => batch.refused(
+            Ok(Ok(retired)) => {
+                batch.saved();
+                batch.notice.push_str(&retired);
+            }
+            Ok(Err(card)) => batch.refused(
                 format!(
                     "{name} already has card {card} in Net2, so they keep it. Lift the card and tap it again for the next person."
                 ),
@@ -234,22 +309,16 @@ async fn connect(state: Rc<RefCell<State>>) {
         }
     };
     let client_id = value("net2-client").trim().to_string();
-    // A form post is a CORS simple request: no preflight. Net2's nginx allows
-    // one sign-in request per 500 ms from anywhere but loopback, so a
-    // preflight followed by a JSON post always gets a 429 the page cannot see.
-    let body = [
-        ("grant_type", "password".to_string()),
-        ("username", value("net2-user")),
-        ("password", password.clone()),
-        ("client_id", client_id.clone()),
-        ("client_secret", secret.clone()),
-    ]
-    .iter()
-    .filter(|(_, value)| !value.is_empty())
-    .map(|(key, value)| format!("{key}={}", js_sys::encode_uri_component(value)))
-    .collect::<Vec<_>>()
-    .join("&");
-    let body = Some(("application/x-www-form-urlencoded", body));
+    // offline_access asks for a refresh token, so an expired session renews
+    // itself instead of stopping a batch for the password again.
+    let body = form(&[
+        ("grant_type", "password"),
+        ("username", &value("net2-user")),
+        ("password", &password),
+        ("client_id", &client_id),
+        ("client_secret", &secret),
+        ("scope", "offline_access"),
+    ]);
     {
         let mut state = state.borrow_mut();
         state.net2_status = (Tone::Busy, format!("Signing in to {origin}…"));
@@ -258,7 +327,8 @@ async fn connect(state: Rc<RefCell<State>>) {
     let token = fetch(&origin, None, "POST", "/authorization/tokens", body)
         .await
         .and_then(|reply| {
-            access_token(&reply).ok_or_else(|| {
+            let refresh = refresh_token(&reply);
+            access_token(&reply).map(|token| (token, refresh)).ok_or_else(|| {
                 failure(
                     "Net2 did not return an access token. Accounts that need a second sign-in step are not supported yet.",
                     false,
@@ -266,8 +336,8 @@ async fn connect(state: Rc<RefCell<State>>) {
                 )
             })
         });
-    let token = match token.map_err(sign_in_failure) {
-        Ok(token) => token,
+    let (token, refresh) = match token.map_err(sign_in_failure) {
+        Ok(tokens) => tokens,
         Err(mut problem) => {
             // Some servers echo submitted values in errors.
             for secret in [&password, &secret].into_iter().filter(|s| s.len() > 2) {
@@ -289,6 +359,8 @@ async fn connect(state: Rc<RefCell<State>>) {
         state.net2 = Some(Session {
             origin: origin.clone(),
             token,
+            refresh,
+            client: (client_id, secret),
         });
         state.net2_status = (Tone::Ready, format!("Connected to {origin}"));
         crate::client::render(&state);
@@ -327,8 +399,19 @@ async fn load_people(state: Rc<RefCell<State>>) {
     element("batch-load")
         .unchecked_into::<web_sys::HtmlButtonElement>()
         .set_disabled(true);
+    // Expiry dates are in the server's local time; the browser's date stands
+    // in for it, as both are on the same site.
+    let now = js_sys::Date::new_0();
+    let today = format!(
+        "{:04}-{:02}-{:02}",
+        now.get_full_year(),
+        now.get_month() + 1,
+        now.get_date()
+    );
     let result = match call(&state, "GET", &path, None).await {
-        Ok(reply) => read_users(&reply).and_then(|users| Batch::from_users(&users, replace)),
+        Ok(reply) => {
+            read_users(&reply).and_then(|users| Batch::from_users(&users, replace, &today))
+        }
         Err(problem) => Err(problem.message),
     };
     crate::batch_client::replace_batch(&state, result, format!("Net2 - {label}"));

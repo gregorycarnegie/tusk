@@ -67,6 +67,10 @@ pub enum Tool {
 pub struct Session {
     pub origin: String,
     pub token: String,
+    /// Swapped for a new `token` when Net2 expires it, if Net2 granted one.
+    pub refresh: Option<String>,
+    /// The integration's client ID and secret, which renewing needs again.
+    pub client: (String, String),
 }
 
 /// Shared by the polling loop and the browser controls, without a UI framework.

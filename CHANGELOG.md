@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0-beta.1] - 2026-10-02
+
+A beta: the new Net2 features below are partly tested on a real Net2, as
+Verification says. Check the first few results in Net2.
+
+### Added
+
+- **Mark their old cards lost**: when giving new cards to people who already
+  have one, Tusk can mark their other cards lost in Net2 once the new card is
+  saved. The new card goes in first, so a failure leaves both cards working
+  and the result names the one to mark lost by hand.
+- An expired Net2 session renews itself. Sign-in asks for a refresh token
+  (`scope=offline_access`), and a request Net2 refuses as signed out gets a
+  new access token and is tried once more, instead of stopping the batch for
+  the password. Ported from greboid/net2's re-authenticate-and-retry.
+- People loaded from Net2 whose access has expired are listed as Expired and
+  left out of the queue, even with new cards requested. The expiry day itself
+  still counts, and a placeholder date such as 0001-01-01 means no expiry.
+
+### Verification
+
+- On a real Net2, sign-in with `scope=offline_access` is accepted and returns
+  a refresh token; access tokens last 1800 seconds, so any batch over half an
+  hour used to end in a sign-out. Renewing also works on a real Net2: it
+  returns a new 30-minute token but no new refresh token, and the same refresh
+  token renews again, so a session lasts as long as the page is open.
+- Expired people show as Expired on a real Net2.
+- Marking cards lost is tested against the stand-in Net2 in
+  `tests/static_site.py` only, and whether Net2 then refuses the old card at
+  a door is not yet checked.
+
+### Changed
+
+- wasm-bindgen 0.2.129. Install the matching `wasm-bindgen-cli` to build.
+
 ## [0.4.3] - 2026-09-25
 
 ### Added
@@ -245,7 +280,8 @@ because each was a wrong assumption worth remembering:
   reports.
 - Tokens are assumed to be 4 to 8 bytes. Longer ones would be ignored.
 
-[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.1...HEAD
+[0.5.0-beta.1]: https://github.com/gregorycarnegie/tusk/compare/v0.4.3...v0.5.0-beta.1
 [0.4.3]: https://github.com/gregorycarnegie/tusk/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/gregorycarnegie/tusk/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/gregorycarnegie/tusk/compare/v0.4.0...v0.4.1

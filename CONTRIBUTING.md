@@ -7,7 +7,7 @@ most of it cannot be tested without the hardware in front of you.
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.128 --locked
+cargo install wasm-bindgen-cli --version 0.2.129 --locked
 cargo run --locked -- dist
 cargo build --locked --release --lib --target wasm32-unknown-unknown
 wasm-bindgen --target web --no-typescript --out-dir dist target/wasm32-unknown-unknown/release/tusk.wasm

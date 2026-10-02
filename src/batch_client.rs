@@ -45,6 +45,7 @@ pub fn render(state: &State) {
         == "net2";
     element("batch-csv").set_hidden(net2_source);
     element("batch-net2").set_hidden(!net2_source);
+    element("batch-retire-option").set_hidden(!net2_source);
     let format: HtmlSelectElement = element("batch-format").unchecked_into();
     // Net2 stores the decimal number, so a direct queue has no choice to make.
     format.set_disabled(net2_source);
@@ -61,8 +62,12 @@ pub fn render(state: &State) {
     let kept = (0..batch.rows.len())
         .filter(|&i| batch.row_status(i) == "Kept")
         .count();
+    let expired = match batch.rows.iter().filter(|r| r.expired).count() {
+        0 => String::new(),
+        n => format!(" · {n} expired"),
+    };
     element("batch-progress").set_text_content(Some(&format!(
-        "{} people · {assigned} assigned · {kept} kept · {skipped} skipped",
+        "{} people · {assigned} assigned · {kept} kept · {skipped} skipped{expired}",
         batch.rows.len()
     )));
     let current = batch.current();

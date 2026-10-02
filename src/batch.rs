@@ -25,6 +25,8 @@ pub struct Row {
     pub skipped: bool,
     /// Net2 may or may not have saved this card; left out of the queue.
     pub unsure: bool,
+    /// Their Net2 access has ended, so they get no card.
+    pub expired: bool,
     eligible: bool,
 }
 
@@ -107,6 +109,7 @@ impl Batch {
                 assigned: None,
                 skipped: false,
                 unsure: false,
+                expired: false,
             });
         }
         if rows.is_empty() {
@@ -132,8 +135,9 @@ impl Batch {
     }
 
     /// A direct queue for Net2 users, in Net2 decimal. Its CSV download keeps
-    /// the user IDs, so it is also a record of what was saved.
-    pub fn from_users(users: &[User], replace: bool) -> Result<Self, String> {
+    /// the user IDs, so it is also a record of what was saved. People whose
+    /// access ended before `today` (`YYYY-MM-DD`) are listed but not queued.
+    pub fn from_users(users: &[User], replace: bool, today: &str) -> Result<Self, String> {
         if users.is_empty() {
             return Err("Net2 has no users there.".into());
         }
@@ -150,6 +154,16 @@ impl Batch {
         let bytes = output.into_inner().map_err(|e| e.to_string())?;
         let mut batch = Self::parse(&bytes, replace, Format::Decimal)?;
         batch.net2_ids = Some(users.iter().map(|user| user.id).collect());
+        for (row, user) in batch.rows.iter_mut().zip(users) {
+            row.expired = user.expired(today);
+            row.eligible &= !row.expired;
+        }
+        let expired = batch.rows.iter().filter(|row| row.expired).count();
+        if expired > 0 {
+            let who = if expired == 1 { "person" } else { "people" };
+            batch.notice =
+                format!("Left out of the queue: {expired} {who} whose Net2 access has expired.");
+        }
         Ok(batch)
     }
 
@@ -188,6 +202,8 @@ impl Batch {
             "Check in Net2"
         } else if row.skipped {
             "Skipped"
+        } else if row.expired {
+            "Expired"
         } else if !row.eligible {
             "Kept"
         } else {
@@ -454,13 +470,14 @@ mod tests {
             middle: String::new(),
             last: last.into(),
             has_image: false,
+            expires: None,
         };
         let users = [
             user(8, "Jane", "Doe"),
             user(9, "", ""),
             user(12, "John", "Roe"),
         ];
-        let mut batch = Batch::from_users(&users, false).unwrap();
+        let mut batch = Batch::from_users(&users, false, TODAY).unwrap();
         assert_eq!(batch.name(1), "(No name)");
         let mut card = Token {
             read: Read::Mifare,
@@ -545,9 +562,10 @@ mod tests {
                 middle: String::new(),
                 last: id.to_string(),
                 has_image: false,
+                expires: None,
             })
             .collect();
-        let mut batch = Batch::from_users(&users, false).unwrap();
+        let mut batch = Batch::from_users(&users, false, TODAY).unwrap();
         batch.resume(None);
         batch.observe(Some(&card(1)));
         batch.refused("Rate limited.".into(), false, false, true);
@@ -564,6 +582,37 @@ mod tests {
         assert!(batch.running && batch.notice == "Busy.");
     }
 
+    const TODAY: &str = "2026-10-02";
+
+    #[test]
+    fn people_whose_access_expired_are_listed_but_never_queued() {
+        let user = |id, expires: Option<&str>| User {
+            id,
+            first: "A".into(),
+            middle: String::new(),
+            last: id.to_string(),
+            has_image: false,
+            expires: expires.map(str::to_string),
+        };
+        let users = [
+            user(1, Some("2026-10-01")),
+            user(2, Some(TODAY)),
+            user(3, None),
+        ];
+        // Not even when new cards were asked for.
+        let mut batch = Batch::from_users(&users, true, TODAY).unwrap();
+        assert_eq!(batch.row_status(0), "Expired");
+        assert!(batch.notice.contains(": 1 person whose"));
+        assert_eq!(batch.current(), Some(1), "the last day still counts");
+        batch.resume(None);
+        batch.skip();
+        batch.skip();
+        assert_eq!(batch.current(), None);
+        assert_eq!(batch.row_status(0), "Expired");
+        let fresh = Batch::from_users(&users[1..], false, TODAY).unwrap();
+        assert!(fresh.notice.is_empty());
+    }
+
     #[test]
     fn a_net2_user_with_only_a_surname_keeps_it() {
         let only_surname = User {
@@ -572,10 +621,11 @@ mod tests {
             middle: String::new(),
             last: "Roe".into(),
             has_image: false,
+            expires: None,
         };
-        let batch = Batch::from_users(&[only_surname], false).unwrap();
+        let batch = Batch::from_users(&[only_surname], false, TODAY).unwrap();
         assert_eq!(batch.name(0), "Roe");
-        assert!(Batch::from_users(&[], false).is_err());
+        assert!(Batch::from_users(&[], false, TODAY).is_err());
     }
 
     #[test]

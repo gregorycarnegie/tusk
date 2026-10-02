@@ -128,6 +128,17 @@ pub fn access_token(reply: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// The sign-in reply's refresh token, if Net2 granted one. It only ever goes
+/// back to Net2 in a form body, so any non-empty text will do.
+pub fn refresh_token(reply: &str) -> Option<String> {
+    serde_json::from_str::<Value>(reply)
+        .ok()?
+        .get("refresh_token")?
+        .as_str()
+        .filter(|token| !token.is_empty())
+        .map(str::to_string)
+}
+
 /// Net2 documents camelCase but its examples are PascalCase; accept either.
 fn field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
     value.get(key).or_else(|| {
@@ -157,6 +168,19 @@ pub struct User {
     pub middle: String,
     pub last: String,
     pub has_image: bool,
+    /// The last day of access, `YYYY-MM-DD` in the server's time.
+    pub expires: Option<String>,
+}
+
+/// A missing or malformed date, or one before 1900 (a "no date" placeholder
+/// like 0001-01-01), means the person has no expiry, never that they expired.
+fn expiry(value: &Value) -> Option<String> {
+    let date = field(value, "expiryDate")?.as_str()?.get(..10)?;
+    let shaped = date.bytes().enumerate().all(|(i, b)| match i {
+        4 | 7 => b == b'-',
+        _ => b.is_ascii_digit(),
+    });
+    (shaped && date >= "1900").then(|| date.to_string())
 }
 
 impl User {
@@ -167,7 +191,14 @@ impl User {
             middle: text(value, "middleName"),
             last: text(value, "lastName"),
             has_image: field(value, "hasImage")?.as_bool()?,
+            expires: expiry(value),
         })
+    }
+
+    /// Access ended before `today` (`YYYY-MM-DD`). The expiry day itself
+    /// still counts, as greboid/net2 treats it.
+    pub fn expired(&self, today: &str) -> bool {
+        self.expires.as_deref().is_some_and(|date| date < today)
     }
 
     pub fn name(&self) -> String {
@@ -220,19 +251,47 @@ pub fn read_departments(body: &str) -> Vec<(i32, String)> {
     departments
 }
 
-/// Card numbers the user holds that are not marked lost.
-pub fn read_cards(body: &str) -> Result<Vec<String>, String> {
+/// The user's tokens that are not marked lost.
+fn active_tokens(body: &str) -> Result<Vec<Value>, String> {
     let list: Vec<Value> = serde_json::from_str(body).map_err(|_| UNEXPECTED.to_string())?;
     Ok(list
-        .iter()
+        .into_iter()
         .filter(|token| {
             !field(token, "isLost")
                 .and_then(Value::as_bool)
                 .unwrap_or(false)
         })
-        .map(|token| text(token, "tokenValue"))
-        .filter(|value| !value.is_empty())
+        .filter(|token| !text(token, "tokenValue").is_empty())
         .collect())
+}
+
+/// Card numbers the user holds that are not marked lost.
+pub fn read_cards(body: &str) -> Result<Vec<String>, String> {
+    Ok(active_tokens(body)?
+        .iter()
+        .map(|token| text(token, "tokenValue"))
+        .collect())
+}
+
+/// For each working card except `keep`: its token ID, number, and the body
+/// that marks it lost. Built fresh, so a PascalCase reply cannot leave two
+/// spellings of `isLost` in it.
+pub fn lost_tokens(body: &str, keep: &str) -> Result<Vec<(i64, String, Value)>, String> {
+    active_tokens(body)?
+        .iter()
+        .filter(|token| text(token, "tokenValue") != keep)
+        .map(|token| {
+            let id = field(token, "id").and_then(Value::as_i64);
+            let value = text(token, "tokenValue");
+            let body = serde_json::json!({
+                "tokenType": text(token, "tokenType"),
+                "tokenValue": value,
+                "isLost": true,
+            });
+            id.map(|id| (id, value, body))
+                .ok_or_else(|| UNEXPECTED.to_string())
+        })
+        .collect()
 }
 
 const NAME_RULE: &str =
@@ -385,6 +444,94 @@ mod tests {
     }
 
     #[test]
+    fn only_a_real_past_expiry_date_counts_as_expired() {
+        let expires = |json: &str| read_user(json, 1).unwrap().expires;
+        let user = r#"{"id":1,"hasImage":false,"expiryDate":"#;
+        assert_eq!(
+            expires(&format!(r#"{user}"2026-10-01T23:59:00+01:00"}}"#)).as_deref(),
+            Some("2026-10-01")
+        );
+        assert_eq!(
+            read_user(
+                r#"{"Id":1,"HasImage":false,"ExpiryDate":"2026-10-01T00:00:00"}"#,
+                1
+            )
+            .unwrap()
+            .expires
+            .as_deref(),
+            Some("2026-10-01")
+        );
+        for date in [
+            "null",
+            "\"0001-01-01T00:00:00\"",
+            "\"01/10/2026\"",
+            "\"2026\"",
+            "7",
+        ] {
+            let user = read_user(&format!("{user}{date}}}"), 1).unwrap();
+            assert_eq!(user.expires, None, "{date}");
+            assert!(!user.expired("2026-10-02"), "{date}");
+        }
+        assert_eq!(expires(r#"{"id":1,"hasImage":false}"#), None);
+        let on = |date: &str| User {
+            expires: Some(date.into()),
+            ..read_user(r#"{"id":1,"hasImage":false}"#, 1).unwrap()
+        };
+        assert!(on("2026-10-01").expired("2026-10-02"));
+        assert!(
+            !on("2026-10-02").expired("2026-10-02"),
+            "the last day still counts"
+        );
+        assert!(!on("2027-01-01").expired("2026-10-02"));
+    }
+
+    #[test]
+    fn marking_old_cards_lost_spares_the_new_one_and_lost_ones() {
+        let reply = r#"[
+            {"id":4,"tokenType":"ProxCard","tokenValue":"111","isLost":false},
+            {"Id":5,"TokenType":"Keyfob","TokenValue":"222","IsLost":false},
+            {"id":6,"tokenType":"ProxCard","tokenValue":"333","isLost":true},
+            {"id":7,"tokenType":"ProxCard","tokenValue":"999","isLost":false}
+        ]"#;
+        let lost = lost_tokens(reply, "999").unwrap();
+        assert_eq!(
+            lost,
+            vec![
+                (
+                    4,
+                    "111".into(),
+                    serde_json::json!({"tokenType":"ProxCard","tokenValue":"111","isLost":true})
+                ),
+                (
+                    5,
+                    "222".into(),
+                    serde_json::json!({"tokenType":"Keyfob","tokenValue":"222","isLost":true})
+                ),
+            ]
+        );
+        // A working card Tusk cannot name is not quietly left working.
+        assert!(lost_tokens(r#"[{"tokenValue":"111","isLost":false}]"#, "999").is_err());
+        assert_eq!(lost_tokens("[]", "999"), Ok(vec![]));
+        assert!(lost_tokens("{}", "999").is_err());
+    }
+
+    #[test]
+    fn a_refresh_token_is_kept_only_when_net2_grants_one() {
+        assert_eq!(
+            refresh_token(r#"{"access_token":"a","refresh_token":"r 1"}"#).as_deref(),
+            Some("r 1")
+        );
+        for none in [
+            r#"{"access_token":"a"}"#,
+            r#"{"refresh_token":""}"#,
+            r#"{"refresh_token":null}"#,
+            "nope",
+        ] {
+            assert_eq!(refresh_token(none), None, "{none}");
+        }
+    }
+
+    #[test]
     fn portraits_need_an_unambiguous_id_and_honest_contents() {
         assert_eq!(portrait_user_id("12345.JPG"), Ok(12345));
         assert_eq!(portrait_user_id("7.jpeg"), Ok(7));
@@ -492,6 +639,7 @@ mod tests {
             middle: middle.into(),
             last: last.into(),
             has_image: false,
+            expires: None,
         };
         assert_eq!(user("Ada", "King", "Lovelace").name(), "Ada King Lovelace");
         assert_eq!(user("", "", "Lovelace").name(), "Lovelace");
@@ -549,6 +697,7 @@ mod tests {
         #[test]
         fn no_reply_or_file_header_makes_it_panic(text in ".{0,200}", bytes in prop::collection::vec(any::<u8>(), 0..200)) {
             let _ = (read_user(&text, 1), read_users(&text), read_cards(&text), read_departments(&text));
+            let _ = (lost_tokens(&text, &text), refresh_token(&text));
             let _ = (access_token(&text), status_failure(500, Some(&text), true, &text));
             let _ = check_portrait("1.jpg", &bytes, bytes.len());
             let mut jpeg = vec![0xFF, 0xD8, 0xFF];

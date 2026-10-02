@@ -64,8 +64,9 @@ Object.defineProperty(navigator, 'clipboard', {value: {
     async writeText(text) { window.copied = text; }
 }});
 // A Net2 Local API at https://net2.test: users 7 and 12 have no portrait or
-// card, 8 has both. Every request is recorded in net2.calls.
-window.net2 = {calls: [], cards: {8: ['11111111']}, images: {}};
+// card, 8 has both, and 9's access has expired. Every request is recorded in
+// net2.calls. Set net2.token to anything else to expire the session.
+window.net2 = {calls: [], cards: {8: ['11111111']}, lost: [], images: {}, token: 'T0K'};
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init = {}) => {
     const api = 'https://net2.test/api/v1';
@@ -78,17 +79,25 @@ window.fetch = async (url, init = {}) => {
     net2.calls.push({method, path, body, auth, kind});
     const reply = (status, data) => new Response(data === undefined ? null : JSON.stringify(data), {status});
     if (path === '/authorization/tokens') {
-        return body.password === 'right &=%' ? reply(200, {access_token: 'T0K'}) : reply(400, {message: 'invalid_client'});
+        if (body.grant_type === 'refresh_token') {
+            if (body.refresh_token !== 'R3FRESH') return reply(400, {error: 'invalid_grant'});
+            net2.token = 'T1K';
+            return reply(200, {access_token: 'T1K', refresh_token: 'R3FRESH'});
+        }
+        return body.password === 'right &=%'
+            ? reply(200, {access_token: net2.token, refresh_token: 'R3FRESH'})
+            : reply(400, {message: 'invalid_client'});
     }
-    if (auth !== 'Bearer T0K') return reply(401, {Message: 'Authorization has been denied'});
+    if (auth !== 'Bearer ' + net2.token) return reply(401, {Message: 'Authorization has been denied'});
     const users = {
         7: {id: 7, firstName: 'Ada', lastName: 'Lovelace', hasImage: false},
-        8: {id: 8, firstName: 'Jane', lastName: 'Doe', hasImage: true},
+        8: {id: 8, firstName: 'Jane', lastName: 'Doe', hasImage: true, expiryDate: '0001-01-01T00:00:00'},
+        9: {id: 9, firstName: 'Old', lastName: 'Leaver', hasImage: false, expiryDate: '2020-07-31T23:59:00'},
         12: {id: 12, firstName: 'John', lastName: 'Roe', hasImage: false},
     };
     let m;
     if (path === '/departments') return reply(200, [{id: 3, name: 'Year 7'}]);
-    if (path === '/departments/3/users') return reply(200, [users[8], users[12]]);
+    if (path === '/departments/3/users') return reply(200, [users[8], users[9], users[12]]);
     if ((m = path.match(/^\/users\/(\d+)$/))) return users[m[1]] ? reply(200, users[m[1]]) : reply(404);
     if ((m = path.match(/^\/users\/(\d+)\/image$/)) && method === 'PUT') {
         net2.images[m[1]] = body.base64Data;
@@ -97,7 +106,12 @@ window.fetch = async (url, init = {}) => {
     if ((m = path.match(/^\/users\/(\d+)\/tokens$/))) {
         const cards = net2.cards[m[1]] = net2.cards[m[1]] || [];
         if (method === 'POST') { cards.push(body.tokenValue); return reply(201, body); }
-        return reply(200, cards.map(tokenValue => ({tokenType: 'ProxCard', tokenValue, isLost: false})));
+        return reply(200, cards.map((tokenValue, i) =>
+            ({id: i + 1, tokenType: 'ProxCard', tokenValue, isLost: net2.lost.includes(tokenValue)})));
+    }
+    if ((m = path.match(/^\/users\/(\d+)\/tokens\/(\d+)$/)) && method === 'PUT') {
+        if (body.isLost) net2.lost.push(net2.cards[m[1]][m[2] - 1]);
+        return reply(200, body);
     }
     return reply(404);
 };
@@ -348,10 +362,19 @@ def main():
                   types.dispatchEvent(new Event('change'));""")
             assert js("return localStorage.getItem('batch-token-type')") == 'Keyfob'
 
-            js("""document.getElementById('batch-replace').checked = false;
+            # Net2 expires the session; loading renews it once and carries on.
+            js("""net2.token = 'EXPIRED';
+                  document.getElementById('batch-replace').checked = false;
                   document.getElementById('batch-department').value = '3';
                   document.getElementById('batch-load').click();""")
             wait("document.getElementById('batch-prompt').textContent === 'Next: Jane Doe'")
+            assert js("return net2.calls.filter(c => c.body && c.body.grant_type === 'refresh_token').length") == 1
+            assert js("return net2.calls.find(c => c.body && c.body.password === 'right &=%').body.scope") == 'offline_access'
+            assert js("return document.getElementById('net2-message').textContent") == 'Connected to https://net2.test'
+            # Expired people are listed but never asked for.
+            assert js("return document.getElementById('batch-notice').textContent").endswith('1 person whose Net2 access has expired.')
+            assert js("return document.getElementById('batch-progress').textContent").endswith('· 1 expired')
+            assert js("return document.querySelector('#batch-rows tr:nth-child(2) td:last-child').textContent") == 'Expired'
             js("document.getElementById('batch-start').click(); reader.card = false")
             wait("document.getElementById('number').textContent === '--------'")
             js('reader.card = true')
@@ -371,9 +394,27 @@ def main():
             assert downloaded('Net2 - Year 7-cards.csv') == [
                 ['User ID', 'First name', 'Surname', 'Card Number'],
                 ['8', 'Jane', 'Doe', ''],
+                ['9', 'Old', 'Leaver', ''],
                 ['12', 'John', 'Roe', '34935100'],
             ]
-            assert js("return net2.calls.every(c => c.path === '/authorization/tokens' || c.auth === 'Bearer T0K')")
+
+            # Reissue with old cards marked lost: Jane's new card goes in
+            # first, then her old one is marked lost, and only that one.
+            js("""document.getElementById('batch-replace').checked = true;
+                  document.getElementById('batch-retire').checked = true;
+                  document.getElementById('batch-load').click();""")
+            wait("document.getElementById('batch-prompt').textContent === 'Next: Jane Doe'")
+            js("document.getElementById('batch-start').click(); reader.card = false")
+            wait("document.getElementById('number').textContent === '--------'")
+            js('reader.uid = [0x5b,0x7d,0x40,0x50]; reader.card = true')
+            wait("document.getElementById('batch-notice').textContent.includes('Old card 11111111 is marked lost.')")
+            assert js("return net2.cards[8].length") == 2
+            assert js("return net2.lost") == ['11111111']
+            writes = js("return net2.calls.filter(c => c.method !== 'GET' && c.path.startsWith('/users/8/')).map(c => [c.method, c.path, c.body])")
+            assert [w[:2] for w in writes] == [['POST', '/users/8/tokens'], ['PUT', '/users/8/tokens/1']], writes
+            assert writes[1][2] == {'tokenType': 'ProxCard', 'tokenValue': '11111111', 'isLost': True}, writes
+            assert js("return document.getElementById('batch-prompt').textContent.includes('John Roe')")
+            assert js("return net2.calls.every(c => c.path === '/authorization/tokens' || c.auth === 'Bearer T0K' || c.auth === 'Bearer T1K')")
             assert js('return errors') == []
 
             js('reader.unplugged = true; reader.opened = false')
@@ -386,7 +427,7 @@ def main():
             wait("document.getElementById('message').textContent.startsWith('WebHID is not available')")
             assert js("return document.getElementById('connect').disabled")
             assert js('return errors') == []
-            print('Static site smoke test passed: reader, batch upload, sequential taps, duplicate guard, pause, skip/undo, CSV preservation, decimal/hex downloads, Net2 sign-in, portrait upload and conversion, direct card saving, and no WebHID.')
+            print('Static site smoke test passed: reader, batch upload, sequential taps, duplicate guard, pause, skip/undo, CSV preservation, decimal/hex downloads, Net2 sign-in, portrait upload and conversion, direct card saving, session renewal, expired people, old cards marked lost, and no WebHID.')
         finally:
             try:
                 if session:

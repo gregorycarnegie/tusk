@@ -61,7 +61,7 @@ out was most of this project; [PROTOCOL.md](PROTOCOL.md) is the write-up.
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.128 --locked
+cargo install wasm-bindgen-cli --version 0.2.129 --locked
 ```
 
 ## Running
@@ -119,7 +119,11 @@ Hitag2 decoding remains beta and should be checked against Net2 on real fobs.
 **Upload portraits** and the **People already in Net2** option under **Batch
 assign cards** sign in to the Net2 Local API from the page itself. Net2's
 own web server allows this; nothing passes through any other server, and
-the access token is held in memory only, so reloading signs you out.
+the access token is held in memory only, so reloading signs you out. Tusk
+asks Net2 for a refresh token too, so when the session expires mid-batch (Net2
+ends sessions after 30 minutes) it renews itself instead of asking for the
+password again. If Net2 grants no
+refresh token, an expired session signs you out as before.
 
 You need:
 
@@ -158,9 +162,17 @@ department (or all users) and press **Load people from Net2**. Each tap is
 saved to that person as a Net2 decimal number. Anyone who already has a card
 keeps it and is passed over, unless **Give new cards to people who already
 have one** was ticked when you loaded them. In that case the new card is added
-and the old one keeps working until you remove it in Net2. Saved cards cannot
-be undone from Tusk; remove them in Net2. **Download CSV** still gives you a
-record with each person's Net2 user ID.
+and the old one keeps working, unless **Mark their old cards lost** is ticked:
+then, once the new card is saved, the person's other cards are marked lost in
+Net2. The new card always goes in first, so a failure leaves them with both
+cards rather than none, and the result says which old card to mark lost by
+hand. People whose Net2 access has expired are listed as **Expired** and left
+out of the queue. Saved cards cannot be undone from Tusk; remove them in Net2.
+**Download CSV** still gives you a record with each person's Net2 user ID.
+
+Session renewal and expiry dates are tested on a real Net2. Marking old cards
+lost has only been tested against a stand-in for Net2 so far. Check the first few in Net2,
+including that a card marked lost is refused at a door.
 
 Choose the **Card type** Net2 should record, as in Net2's Change token type
 dialog. It defaults to Proximity ISO card no magstripe, and the browser
