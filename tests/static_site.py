@@ -99,7 +99,7 @@ window.fetch = async (url, init = {}) => {
     if ((m = path.match(/^\/customquery\/querydb\?query=(.*)$/))) {
         const sql = decodeURIComponent(m[1]);
         net2.queries.push(sql);
-        const card = sql.match(/WHERE c\.CardNumber = (\d+) /)[1];
+        const card = sql.match(/WHERE \[c\]\.\[CardNumber\] = (\d+) /)[1];
         return reply(200, Object.entries(net2.cards).filter(([, cards]) => cards.includes(card))
             .map(([id, cards]) => ({lost: net2.lost.includes(card), userid: +id, firstname: users[id].firstName,
                                      middlename: null, surname: users[id].lastName, department: 'Year 7'})));
@@ -437,7 +437,7 @@ def main():
             js('reader.uid = [0x5b,0x7d,0x40,0x3c]; reader.card = true')
             wait("document.getElementById('owner').textContent === 'In Net2: John Roe (user 12) · Year 7'")
             assert js("return net2.queries.length") == asked + 1
-            assert js("return net2.queries.at(-1)").endswith('WHERE c.CardNumber = 34935100 ORDER BY c.LostCard')
+            assert js("return net2.queries.at(-1)").endswith('WHERE [c].[CardNumber] = 34935100 ORDER BY [c].[LostCard] ASC')
             js('reader.card = false')
             wait("document.getElementById('owner').hidden")
             js('reader.uid = [1,2,3,4]; reader.card = true')

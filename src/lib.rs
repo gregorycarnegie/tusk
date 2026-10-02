@@ -2,6 +2,7 @@ pub mod batch;
 pub mod net2;
 pub mod protocol;
 pub mod token;
+pub mod tsql;
 
 #[cfg(target_arch = "wasm32")]
 mod batch_client;

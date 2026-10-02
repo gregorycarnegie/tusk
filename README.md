@@ -305,6 +305,7 @@ repository subpath. Each push to `master` that passes is published to GitHub Pag
 | `src/batch.rs` | CSV preservation, assignment queue, and duplicate checks |
 | `src/batch_client.rs` | Batch upload, guided prompts, review, and download |
 | `src/net2.rs` | Net2 API errors and records, and portrait file rules |
+| `src/tsql.rs` | SQL Server dialect for sea-query, for Net2's `customquery` |
 | `src/net2_client.rs` | Net2 sign-in, requests, and saving tapped cards |
 | `src/portrait_client.rs` | Portrait matching, checking, and upload |
 | `src/lib.rs` | Shared protocol library and WebAssembly entry point |

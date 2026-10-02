@@ -2,6 +2,7 @@
 //! JSON records Tusk reads, and the portrait file rules. `net2_client` makes
 //! the requests. Net2's nginx answers CORS for any origin, so the page talks
 //! to it directly and no Tusk server is needed.
+use sea_query::{Expr, JoinType, Order, Query};
 use serde_json::Value;
 
 /// Net2's token types: the API's name, then the label Net2 shows, in Net2's
@@ -252,15 +253,32 @@ pub fn read_departments(body: &str) -> Vec<(i32, String)> {
 }
 
 /// Who holds a card, from Net2's own tables: the REST API cannot search by
-/// card. Only a number goes into the SQL, so nothing typed can change it.
-/// The aliases are lower case because querydb rewrites leading capitals.
+/// card. The aliases are lower case because querydb rewrites leading capitals.
 pub fn owner_query(card: u32) -> String {
-    format!(
-        "SELECT c.LostCard AS lost, c.UserID AS userid, u.FirstName AS firstname, \
-         u.MiddleName AS middlename, u.Surname AS surname, u.DepartmentName AS department \
-         FROM sdk.Cards c LEFT JOIN sdk.UsersEx u ON u.UserID = c.UserID \
-         WHERE c.CardNumber = {card} ORDER BY c.LostCard"
-    )
+    // Here only: ExprTrait gives every type an `eq` and a `max`.
+    use sea_query::ExprTrait;
+    let mut query = Query::select();
+    for (table, column, alias) in [
+        ("c", "LostCard", "lost"),
+        ("c", "UserID", "userid"),
+        ("u", "FirstName", "firstname"),
+        ("u", "MiddleName", "middlename"),
+        ("u", "Surname", "surname"),
+        ("u", "DepartmentName", "department"),
+    ] {
+        query.expr_as(Expr::col((table, column)), alias);
+    }
+    query
+        .from_as(("sdk", "Cards"), "c")
+        .join_as(
+            JoinType::LeftJoin,
+            ("sdk", "UsersEx"),
+            "u",
+            Expr::col(("u", "UserID")).equals(("c", "UserID")),
+        )
+        .and_where(Expr::col(("c", "CardNumber")).eq(card))
+        .order_by(("c", "LostCard"), Order::Asc);
+    crate::tsql::sql(&query)
 }
 
 /// What Net2 knows about a card, in one line.
@@ -561,8 +579,15 @@ mod tests {
 
     #[test]
     fn a_card_lookup_says_who_holds_it_and_whether_it_is_lost() {
-        let query = owner_query(34935097);
-        assert!(query.ends_with("WHERE c.CardNumber = 34935097 ORDER BY c.LostCard"));
+        assert_eq!(
+            owner_query(34935097),
+            "SELECT [c].[LostCard] AS [lost], [c].[UserID] AS [userid], \
+             [u].[FirstName] AS [firstname], [u].[MiddleName] AS [middlename], \
+             [u].[Surname] AS [surname], [u].[DepartmentName] AS [department] \
+             FROM [sdk].[Cards] AS [c] \
+             LEFT JOIN [sdk].[UsersEx] AS [u] ON [u].[UserID] = [c].[UserID] \
+             WHERE [c].[CardNumber] = 34935097 ORDER BY [c].[LostCard] ASC"
+        );
         // Net2's own reply to this query, for card 54447157, on 2026-10-02.
         let real = r#"[{"lost":false,"userid":2,"firstname":"Amara","middlename":"","surname":"Okafor","department":"Year 7"}]"#;
         assert_eq!(

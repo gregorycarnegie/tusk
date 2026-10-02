@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connector. The columns and the query's reply were checked on a real Net2;
   the reader side is tested against the stand-in Net2 only.
 
+### Changed
+
+- SQL for Net2's `customquery` is built with sea-query, through a small SQL
+  Server backend of Tusk's own (`src/tsql.rs`): sea-query ships none, and its
+  others would quote text in ways T-SQL reads differently. Text is written as
+  `N'…'` with quotes doubled, names in brackets, booleans as 1 and 0. Ready
+  for queries that match on text, such as personnel numbers. The WebAssembly
+  module grows by about 170 KB.
+
 ## [0.5.0-beta.1] - 2026-10-02
 
 A beta: the new Net2 features below are partly tested on a real Net2, as
