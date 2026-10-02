@@ -295,34 +295,42 @@ def main():
             assert downloaded('hex-cards.csv') == sample_rows
             assert js('return errors') == []
 
-            # Before sign-in the Read tab hides Net2 until asked whose card it is.
+            # Sign-in is a sheet that opens from any tab; on Read a card the
+            # holder pane offers it too.
             js("location.hash = 'reader'")
             wait("!document.getElementById('reading').hidden")
-            assert js("return document.getElementById('net2-panel').hidden && document.getElementById('owner').hidden")
+            sheet_open = "document.getElementById('net2-panel').matches(':popover-open')"
+            assert js(f"return !{sheet_open} && document.getElementById('owner').hidden")
             js("document.getElementById('owner-connect').click()")
-            wait("!document.getElementById('net2-panel').hidden && document.getElementById('owner-connect').hidden")
+            wait(sheet_open)
+            js("document.getElementById('net2-panel').hidePopover()")
 
             # Net2: sign in, upload a portrait, then save taps straight to Net2 users.
             js("window.confirm = () => true; location.hash = 'portraits'")
-            wait("!document.getElementById('portrait-tool').hidden && !document.getElementById('net2-panel').hidden")
-            assert js("return document.getElementById('reader-panel').hidden")
+            wait("!document.getElementById('portrait-tool').hidden")
+            # The reader and Net2 links stay in view on every tab.
+            assert js("return !document.getElementById('reader-panel').hidden && !document.getElementById('net2-open').hidden")
 
             def sign_in(password):
                 fields = {'net2-server': 'https://NET2.test/', 'net2-client': 'client',
                           'net2-user': 'System engineer', 'net2-password': password + ' &=%'}
                 js(f"""
+                    if (!{sheet_open}) document.getElementById('net2-open').click();
                     for (const [id, value] of Object.entries({json.dumps(fields)}))
                         document.getElementById(id).value = value;
                     document.getElementById('net2-connect').click();
                 """)
             sign_in('wrong')
             wait("document.getElementById('net2-message').textContent.includes('ClientID')")
+            # The sheet covers the status bar, so it repeats the refusal and stays open.
+            assert js(f"return {sheet_open} && document.getElementById('net2-problem').textContent.includes('ClientID')")
             assert js("return document.getElementById('net2-password').value === ''")
             # A JSON sign-in needs a CORS preflight, which Net2's rate limit refuses.
             assert js("return net2.calls[0].kind") == 'application/x-www-form-urlencoded'
             sign_in('right')
             wait("document.getElementById('net2-message').textContent === 'Connected to https://net2.test'")
-            assert js("return document.getElementById('net2-form').hidden")
+            assert js(f"return document.getElementById('net2-form').hidden && !{sheet_open}")
+            assert js("return document.getElementById('net2-open').hidden && !document.getElementById('net2-disconnect').hidden")
             # A JPG goes up as it is. A PNG is converted: Net2 shows nothing for
             # one. A wide WebP is converted and shrunk; junk named like an image
             # is refused.
@@ -435,7 +443,7 @@ def main():
             wait("document.getElementById('number').textContent === '--------' && document.getElementById('owner').hidden")
             asked = js("return net2.queries.length")
             js('reader.uid = [0x5b,0x7d,0x40,0x3c]; reader.card = true')
-            wait("document.getElementById('owner').textContent === 'In Net2: John Roe (user 12) · Year 7'")
+            wait("document.getElementById('owner').textContent === 'John Roe (user 12) · Year 7'")
             assert js("return net2.queries.length") == asked + 1
             assert js("return net2.queries.at(-1)").endswith('WHERE [c].[CardNumber] = 34935100 ORDER BY [c].[LostCard] ASC')
             js('reader.card = false')

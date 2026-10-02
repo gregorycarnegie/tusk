@@ -25,6 +25,8 @@ pub(crate) fn render(state: &State) {
         .set_attribute("data-tone", state.status.0.name())
         .unwrap();
     element("message").set_text_content(Some(&state.status.1));
+    // Ready means a reader is connected and answering; nothing to connect.
+    element("connect").set_hidden(state.status.0 == Tone::Ready);
     let card = state.card.as_ref();
     let beta = card.is_some_and(|t| t.read == Read::Hitag2);
     element("reading").set_class_name(if card.is_some() {

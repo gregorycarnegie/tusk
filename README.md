@@ -22,17 +22,22 @@ way Net2 does, but not yet tried on a real fob, so check the number against
 Net2 before relying on it.
 
 ```
-┌──────────────────────────────────────────┐
-│ ● Ready - present a token  (Connect)     │
-├──────────────────────────────────────────┤
-│            NET2 TOKEN NUMBER             │
-│                34935097                  │
-│            Mifare  5B7D4039              │
-│      [Copy number]  [Copy hex]           │
-└──────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ Tusk v0.5.0      [Read a card] [Batch assign] [Portraits]        │
+│ READER ● Ready - present a token   NET2 ● Connected  (Disconnect)│
+├──────────────────────────────────────────────────────────────────┤
+│  ╭───────────────────────────╮   CARD HOLDER                     │
+│  │ NET2 TOKEN  MIFARE     )) │   Jane Doe (user 8) · Year 7      │
+│  │ ▣                         │                                   │
+│  │ 34935097                  │   COPY                            │
+│  │ 5B7D4039                  │   [Net2 number]  [Raw hex]        │
+│  ╰───────────────────────────╯                                   │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-Light and dark themes follow the system setting, with a toggle in the header.
+The reader and Net2 connections sit under the header on every tab, and
+**Sign in** there opens the Net2 sign-in from wherever you are. Light and
+dark themes follow the system setting, with a toggle in the header.
 
 The reader speaks an undocumented, lightly obfuscated HID protocol. Working it
 out was most of this project; [PROTOCOL.md](PROTOCOL.md) is the write-up.
@@ -116,8 +121,9 @@ Hitag2 decoding remains beta and should be checked against Net2 on real fobs.
 
 ## Working with Net2 directly
 
-**Whose card is this?** on **Read a card**, **Upload portraits**, and the
-**People already in Net2** option under **Batch assign cards** sign in to the Net2 Local API from the page itself. Net2's
+The card holder on **Read a card**, **Upload portraits**, and the **People
+already in Net2** option under **Batch assign cards** use the Net2 Local API,
+signed in from the page itself: **Sign in** under the header, from any tab. Net2's
 own web server allows this; nothing passes through any other server, and
 the access token is held in memory only, so reloading signs you out. Tusk
 asks Net2 for a refresh token too, so when the session expires mid-batch (Net2
@@ -157,14 +163,14 @@ people already have**. **Upload portraits** asks for confirmation; each upload
 re-reads the person first and stops if they changed since the check. If a
 result says Net2 did not confirm the change, look in Net2 before trying again.
 
-**Whose card is this?** Press it on **Read a card** and connect. From then
-on, every card you tap shows who holds it in Net2, with their user ID and
+**Card holder.** Once signed in, every card you tap on **Read a card** shows
+who holds it in Net2, with their user ID and
 department, and says if the card is marked lost, or that it is not in Net2.
 The API has no search by card, so Tusk asks Net2's database through the API's
 `customquery` endpoint with one fixed query: only the card's number goes into
 it. The integration licence must allow that endpoint.
 
-**Cards straight to Net2.** Choose **People already in Net2**, connect, pick a
+**Cards straight to Net2.** Sign in, choose **People already in Net2**, pick a
 department (or all users) and press **Load people from Net2**. Each tap is
 saved to that person as a Net2 decimal number. Anyone who already has a card
 keeps it and is passed over, unless **Give new cards to people who already

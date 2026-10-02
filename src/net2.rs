@@ -310,7 +310,7 @@ pub fn describe_owners(body: &str) -> Result<String, String> {
         })
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| UNEXPECTED.to_string())?;
-    Ok(format!("In Net2: {}", holders.join("; ")))
+    Ok(holders.join("; "))
 }
 
 /// The user's tokens that are not marked lost.
@@ -592,7 +592,7 @@ mod tests {
         let real = r#"[{"lost":false,"userid":2,"firstname":"Amara","middlename":"","surname":"Okafor","department":"Year 7"}]"#;
         assert_eq!(
             describe_owners(real).as_deref(),
-            Ok("In Net2: Amara Okafor (user 2) · Year 7")
+            Ok("Amara Okafor (user 2) · Year 7")
         );
         // The shape Net2 sent for sdk.Cards on 2026-10-02, with Tusk's aliases.
         let reply = r#"[
@@ -601,12 +601,12 @@ mod tests {
         ]"#;
         assert_eq!(
             describe_owners(reply).as_deref(),
-            Ok("In Net2: Jane Doe (user 8) · Year 7; Old Leaver (user 9) · marked lost")
+            Ok("Jane Doe (user 8) · Year 7; Old Leaver (user 9) · marked lost")
         );
         // A card whose user row is missing still names the user ID.
         assert_eq!(
             describe_owners(r#"[{"lost":false,"userid":5,"firstname":null}]"#).as_deref(),
-            Ok("In Net2: (No name) (user 5)")
+            Ok("(No name) (user 5)")
         );
         assert_eq!(describe_owners("[]").as_deref(), Ok("Not in Net2"));
         assert!(describe_owners(r#"[{"lost":false}]"#).is_err());

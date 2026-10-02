@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A new design that uses the whole screen. The reader and Net2 connections
+  sit under the header on every tab, and Net2 sign-in opens as a sheet from
+  any of them, rather than from two of the three tools. The token shows on a
+  drawn access card that a scan line sweeps while the reader waits; the card
+  holder and copy buttons sit beside it. Batch assign and Portraits put their
+  settings in a rail on the left and the queue or photos on the right, with
+  a progress bar for the queue. On a phone a loaded queue comes before its
+  settings. Fonts are now Schibsted Grotesk and Martian Mono.
+- The card holder reads "Jane Doe (user 8) · Year 7", without "In Net2:".
 - SQL for Net2's `customquery` is built with sea-query, through a small SQL
   Server backend of Tusk's own (`src/tsql.rs`): sea-query ships none, and its
   others would quote text in ways T-SQL reads differently. Text is written as

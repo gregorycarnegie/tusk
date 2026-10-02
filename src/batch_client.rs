@@ -26,7 +26,6 @@ pub fn render(state: &State) {
     let tool = state.tool;
     element("reader-intro").set_hidden(tool != Tool::Reader);
     element("reading").set_hidden(tool != Tool::Reader);
-    element("reader-panel").set_hidden(tool == Tool::Portraits);
     element("batch-intro").set_hidden(tool != Tool::Batch);
     element("batch-tool").set_hidden(tool != Tool::Batch);
     element("portraits-intro").set_hidden(tool != Tool::Portraits);
@@ -46,6 +45,7 @@ pub fn render(state: &State) {
     element("batch-csv").set_hidden(net2_source);
     element("batch-net2").set_hidden(!net2_source);
     element("batch-retire-option").set_hidden(!net2_source);
+    element("batch-format-field").set_hidden(net2_source);
     let format: HtmlSelectElement = element("batch-format").unchecked_into();
     // Net2 stores the decimal number, so a direct queue has no choice to make.
     format.set_disabled(net2_source);
@@ -62,6 +62,13 @@ pub fn render(state: &State) {
     let kept = (0..batch.rows.len())
         .filter(|&i| batch.row_status(i) == "Kept")
         .count();
+    let waiting = (0..batch.rows.len())
+        .filter(|&i| batch.row_status(i) == "Waiting")
+        .count();
+    let done = 100 * (batch.rows.len() - waiting) / batch.rows.len().max(1);
+    element("batch-meter")
+        .set_attribute("style", &format!("width: {done}%"))
+        .unwrap();
     let expired = match batch.rows.iter().filter(|r| r.expired).count() {
         0 => String::new(),
         n => format!(" · {n} expired"),

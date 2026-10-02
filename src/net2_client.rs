@@ -44,8 +44,6 @@ thread_local! {
     static SAVING: Cell<bool> = const { Cell::new(false) };
     /// The card on the Read tab and what Net2 said about it, once it answers.
     static OWNER: RefCell<Option<(u32, Option<String>)>> = const { RefCell::new(None) };
-    /// The Net2 panel was asked for on the Read tab.
-    static LOOK_UP: Cell<bool> = const { Cell::new(false) };
 }
 
 fn value(id: &str) -> String {
@@ -189,23 +187,21 @@ pub async fn call(
 }
 
 pub fn render(state: &State) {
-    let net2_source = element("batch-source")
-        .unchecked_into::<HtmlSelectElement>()
-        .value()
-        == "net2";
     let connected = state.net2.is_some();
-    element("net2-panel").set_hidden(match state.tool {
-        Tool::Reader => !connected && !LOOK_UP.get(),
-        Tool::Batch => !net2_source,
-        Tool::Portraits => false,
-    });
     let (tone, message) = &state.net2_status;
     element("net2-state")
         .set_attribute("data-tone", tone.name())
         .unwrap();
     element("net2-message").set_text_content(Some(message));
-    element("net2-form").set_hidden(state.net2.is_some());
-    element("net2-disconnect").set_hidden(state.net2.is_none());
+    // The sign-in sheet covers the status bar, so a refusal is repeated in it.
+    let problem = element("net2-problem");
+    problem.set_hidden(*tone != Tone::Problem);
+    problem.set_text_content(Some(message));
+    element("net2-form").set_hidden(connected);
+    for id in ["net2-open", "owner-connect", "batch-signin"] {
+        element(id).set_hidden(connected);
+    }
+    element("net2-disconnect").set_hidden(!connected);
     let sending = state.batch.as_ref().is_some_and(|b| b.sending.is_some());
     element("batch-load")
         .unchecked_into::<web_sys::HtmlButtonElement>()
@@ -217,7 +213,6 @@ pub fn render(state: &State) {
             spawn_local(save_card(app));
         }
     }
-    element("owner-connect").set_hidden(connected || LOOK_UP.get());
     // Each tap on the Read tab is looked up once; lifting the card forgets it.
     let card = state
         .card
@@ -413,6 +408,7 @@ async fn connect(state: Rc<RefCell<State>>) {
         state.net2_status = (Tone::Ready, format!("Connected to {origin}"));
         crate::client::render(&state);
     }
+    element("net2-panel").hide_popover().ok();
     // Departments only narrow the list; without them, All users still works.
     if let Ok(reply) = call(&state, "GET", "/departments", None).await {
         let list = element("batch-department");
@@ -515,14 +511,6 @@ pub fn setup(state: Rc<RefCell<State>>) {
             batch.running = false;
         }
         crate::client::render(&state);
-    });
-    on_click("owner-connect", || {
-        LOOK_UP.set(true);
-        if let Some(app) = APP.with(|app| app.get().cloned()) {
-            crate::client::render(&app.borrow());
-        }
-        element("net2-panel").scroll_into_view();
-        element("net2-server").focus().ok();
     });
     on_click("batch-load", move || {
         spawn_local(load_people(state.clone()))
