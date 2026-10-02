@@ -108,6 +108,7 @@
     }
     .chip.beta { background: color-mix(in srgb, var(--busy) 18%, transparent); color: var(--text); }
     code { font: .95rem/1.4 ui-monospace, "Cascadia Code", Consolas, monospace; color: var(--text); overflow-wrap: anywhere; }
+    .owner { margin: .75rem auto 0; max-width: 32rem; font-weight: 600; }
     .beta-note { display: none; margin: .75rem auto 0; max-width: 28rem; font-size: .9rem; color: var(--muted); }
     .beta-note.shown { display: block; }
     .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem; margin-top: 1.25rem; }

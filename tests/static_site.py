@@ -66,7 +66,7 @@ Object.defineProperty(navigator, 'clipboard', {value: {
 // A Net2 Local API at https://net2.test: users 7 and 12 have no portrait or
 // card, 8 has both, and 9's access has expired. Every request is recorded in
 // net2.calls. Set net2.token to anything else to expire the session.
-window.net2 = {calls: [], cards: {8: ['11111111']}, lost: [], images: {}, token: 'T0K'};
+window.net2 = {calls: [], cards: {8: ['11111111']}, lost: [], images: {}, token: 'T0K', queries: []};
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init = {}) => {
     const api = 'https://net2.test/api/v1';
@@ -96,6 +96,14 @@ window.fetch = async (url, init = {}) => {
         12: {id: 12, firstName: 'John', lastName: 'Roe', hasImage: false},
     };
     let m;
+    if ((m = path.match(/^\/customquery\/querydb\?query=(.*)$/))) {
+        const sql = decodeURIComponent(m[1]);
+        net2.queries.push(sql);
+        const card = sql.match(/WHERE c\.CardNumber = (\d+) /)[1];
+        return reply(200, Object.entries(net2.cards).filter(([, cards]) => cards.includes(card))
+            .map(([id, cards]) => ({lost: net2.lost.includes(card), userid: +id, firstname: users[id].firstName,
+                                     middlename: null, surname: users[id].lastName, department: 'Year 7'})));
+    }
     if (path === '/departments') return reply(200, [{id: 3, name: 'Year 7'}]);
     if (path === '/departments/3/users') return reply(200, [users[8], users[9], users[12]]);
     if ((m = path.match(/^\/users\/(\d+)$/))) return users[m[1]] ? reply(200, users[m[1]]) : reply(404);
@@ -287,6 +295,13 @@ def main():
             assert downloaded('hex-cards.csv') == sample_rows
             assert js('return errors') == []
 
+            # Before sign-in the Read tab hides Net2 until asked whose card it is.
+            js("location.hash = 'reader'")
+            wait("!document.getElementById('reading').hidden")
+            assert js("return document.getElementById('net2-panel').hidden && document.getElementById('owner').hidden")
+            js("document.getElementById('owner-connect').click()")
+            wait("!document.getElementById('net2-panel').hidden && document.getElementById('owner-connect').hidden")
+
             # Net2: sign in, upload a portrait, then save taps straight to Net2 users.
             js("window.confirm = () => true; location.hash = 'portraits'")
             wait("!document.getElementById('portrait-tool').hidden && !document.getElementById('net2-panel').hidden")
@@ -414,6 +429,20 @@ def main():
             assert [w[:2] for w in writes] == [['POST', '/users/8/tokens'], ['PUT', '/users/8/tokens/1']], writes
             assert writes[1][2] == {'tokenType': 'ProxCard', 'tokenValue': '11111111', 'isLost': True}, writes
             assert js("return document.getElementById('batch-prompt').textContent.includes('John Roe')")
+
+            # Whose card is this: each tap on the Read tab is looked up once.
+            js("location.hash = 'reader'; reader.card = false")
+            wait("document.getElementById('number').textContent === '--------' && document.getElementById('owner').hidden")
+            asked = js("return net2.queries.length")
+            js('reader.uid = [0x5b,0x7d,0x40,0x3c]; reader.card = true')
+            wait("document.getElementById('owner').textContent === 'In Net2: John Roe (user 12) · Year 7'")
+            assert js("return net2.queries.length") == asked + 1
+            assert js("return net2.queries.at(-1)").endswith('WHERE c.CardNumber = 34935100 ORDER BY c.LostCard')
+            js('reader.card = false')
+            wait("document.getElementById('owner').hidden")
+            js('reader.uid = [1,2,3,4]; reader.card = true')
+            wait("document.getElementById('owner').textContent === 'Not in Net2'")
+            assert js("return net2.queries.length") == asked + 2
             assert js("return net2.calls.every(c => c.path === '/authorization/tokens' || c.auth === 'Bearer T0K' || c.auth === 'Bearer T1K')")
             assert js('return errors') == []
 
@@ -427,7 +456,7 @@ def main():
             wait("document.getElementById('message').textContent.startsWith('WebHID is not available')")
             assert js("return document.getElementById('connect').disabled")
             assert js('return errors') == []
-            print('Static site smoke test passed: reader, batch upload, sequential taps, duplicate guard, pause, skip/undo, CSV preservation, decimal/hex downloads, Net2 sign-in, portrait upload and conversion, direct card saving, session renewal, expired people, old cards marked lost, and no WebHID.')
+            print('Static site smoke test passed: reader, batch upload, sequential taps, duplicate guard, pause, skip/undo, CSV preservation, decimal/hex downloads, Net2 sign-in, portrait upload and conversion, direct card saving, session renewal, expired people, old cards marked lost, card owner lookup, and no WebHID.')
         finally:
             try:
                 if session:

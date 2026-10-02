@@ -116,8 +116,8 @@ Hitag2 decoding remains beta and should be checked against Net2 on real fobs.
 
 ## Working with Net2 directly
 
-**Upload portraits** and the **People already in Net2** option under **Batch
-assign cards** sign in to the Net2 Local API from the page itself. Net2's
+**Whose card is this?** on **Read a card**, **Upload portraits**, and the
+**People already in Net2** option under **Batch assign cards** sign in to the Net2 Local API from the page itself. Net2's
 own web server allows this; nothing passes through any other server, and
 the access token is held in memory only, so reloading signs you out. Tusk
 asks Net2 for a refresh token too, so when the session expires mid-batch (Net2
@@ -156,6 +156,13 @@ who already have a portrait are skipped unless you tick **Replace portraits
 people already have**. **Upload portraits** asks for confirmation; each upload
 re-reads the person first and stops if they changed since the check. If a
 result says Net2 did not confirm the change, look in Net2 before trying again.
+
+**Whose card is this?** Press it on **Read a card** and connect. From then
+on, every card you tap shows who holds it in Net2, with their user ID and
+department, and says if the card is marked lost, or that it is not in Net2.
+The API has no search by card, so Tusk asks Net2's database through the API's
+`customquery` endpoint with one fixed query: only the card's number goes into
+it. The integration licence must allow that endpoint.
 
 **Cards straight to Net2.** Choose **People already in Net2**, connect, pick a
 department (or all users) and press **Load people from Net2**. Each tap is

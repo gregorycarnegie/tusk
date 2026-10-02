@@ -14,8 +14,9 @@ use crate::{
     batch::Batch,
     client::{element, on_click},
     net2::{
-        Failure, UNCERTAIN_WRITE, access_token, failure, lost_tokens, parse_origin, read_cards,
-        read_departments, read_users, refresh_token, sign_in_failure, status_failure,
+        Failure, UNCERTAIN_WRITE, access_token, describe_owners, failure, lost_tokens, owner_query,
+        parse_origin, read_cards, read_departments, read_users, refresh_token, sign_in_failure,
+        status_failure,
     },
     reader::{Session, State, Tone, Tool},
 };
@@ -41,6 +42,10 @@ thread_local! {
     static APP: OnceCell<Rc<RefCell<State>>> = const { OnceCell::new() };
     /// A tapped card is on its way to Net2.
     static SAVING: Cell<bool> = const { Cell::new(false) };
+    /// The card on the Read tab and what Net2 said about it, once it answers.
+    static OWNER: RefCell<Option<(u32, Option<String>)>> = const { RefCell::new(None) };
+    /// The Net2 panel was asked for on the Read tab.
+    static LOOK_UP: Cell<bool> = const { Cell::new(false) };
 }
 
 fn value(id: &str) -> String {
@@ -188,8 +193,9 @@ pub fn render(state: &State) {
         .unchecked_into::<HtmlSelectElement>()
         .value()
         == "net2";
+    let connected = state.net2.is_some();
     element("net2-panel").set_hidden(match state.tool {
-        Tool::Reader => true,
+        Tool::Reader => !connected && !LOOK_UP.get(),
         Tool::Batch => !net2_source,
         Tool::Portraits => false,
     });
@@ -211,6 +217,48 @@ pub fn render(state: &State) {
             spawn_local(save_card(app));
         }
     }
+    element("owner-connect").set_hidden(connected || LOOK_UP.get());
+    // Each tap on the Read tab is looked up once; lifting the card forgets it.
+    let card = state
+        .card
+        .as_ref()
+        .filter(|_| connected && state.tool == Tool::Reader)
+        .map(|token| token.number);
+    let owner = OWNER.with_borrow_mut(|owner| {
+        if owner.as_ref().map(|(number, _)| *number) != card {
+            *owner = card.map(|number| (number, None));
+            if let (Some(number), Some(app)) = (card, APP.with(|app| app.get().cloned())) {
+                spawn_local(look_up(app, number));
+            }
+        }
+        owner.as_ref().map(|(_, said)| said.clone())
+    });
+    let line = element("owner");
+    line.set_hidden(owner.is_none());
+    line.set_text_content(
+        owner
+            .map(|said| said.unwrap_or_else(|| "Looking up in Net2…".into()))
+            .as_deref(),
+    );
+}
+
+async fn look_up(state: Rc<RefCell<State>>, card: u32) {
+    let path = format!(
+        "/customquery/querydb?query={}",
+        js_sys::encode_uri_component(&owner_query(card))
+    );
+    let said = match call(&state, "GET", &path, None).await {
+        Ok(reply) => describe_owners(&reply).unwrap_or_else(|message| message),
+        Err(problem) => problem.message,
+    };
+    OWNER.with_borrow_mut(|owner| {
+        if let Some((number, answer)) = owner
+            && *number == card
+        {
+            *answer = Some(said);
+        }
+    });
+    crate::client::render(&state.borrow());
 }
 
 async fn save_card(state: Rc<RefCell<State>>) {
@@ -467,6 +515,14 @@ pub fn setup(state: Rc<RefCell<State>>) {
             batch.running = false;
         }
         crate::client::render(&state);
+    });
+    on_click("owner-connect", || {
+        LOOK_UP.set(true);
+        if let Some(app) = APP.with(|app| app.get().cloned()) {
+            crate::client::render(&app.borrow());
+        }
+        element("net2-panel").scroll_into_view();
+        element("net2-server").focus().ok();
     });
     on_click("batch-load", move || {
         spawn_local(load_people(state.clone()))

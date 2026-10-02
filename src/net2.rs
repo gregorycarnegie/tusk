@@ -251,6 +251,50 @@ pub fn read_departments(body: &str) -> Vec<(i32, String)> {
     departments
 }
 
+/// Who holds a card, from Net2's own tables: the REST API cannot search by
+/// card. Only a number goes into the SQL, so nothing typed can change it.
+/// The aliases are lower case because querydb rewrites leading capitals.
+pub fn owner_query(card: u32) -> String {
+    format!(
+        "SELECT c.LostCard AS lost, c.UserID AS userid, u.FirstName AS firstname, \
+         u.MiddleName AS middlename, u.Surname AS surname, u.DepartmentName AS department \
+         FROM sdk.Cards c LEFT JOIN sdk.UsersEx u ON u.UserID = c.UserID \
+         WHERE c.CardNumber = {card} ORDER BY c.LostCard"
+    )
+}
+
+/// What Net2 knows about a card, in one line.
+pub fn describe_owners(body: &str) -> Result<String, String> {
+    let rows: Vec<Value> = serde_json::from_str(body).map_err(|_| UNEXPECTED.to_string())?;
+    if rows.is_empty() {
+        return Ok("Not in Net2".into());
+    }
+    let holders = rows
+        .iter()
+        .map(|row| {
+            let user = User {
+                id: row.get("userid")?.as_i64()?.try_into().ok()?,
+                first: text(row, "firstname"),
+                middle: text(row, "middlename"),
+                last: text(row, "surname"),
+                has_image: false,
+                expires: None,
+            };
+            let mut line = format!("{} (user {})", user.name(), user.id);
+            match text(row, "department").as_str() {
+                "" => {}
+                department => line.push_str(&format!(" · {department}")),
+            }
+            if row.get("lost").and_then(Value::as_bool) == Some(true) {
+                line.push_str(" · marked lost");
+            }
+            Some(line)
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| UNEXPECTED.to_string())?;
+    Ok(format!("In Net2: {}", holders.join("; ")))
+}
+
 /// The user's tokens that are not marked lost.
 fn active_tokens(body: &str) -> Result<Vec<Value>, String> {
     let list: Vec<Value> = serde_json::from_str(body).map_err(|_| UNEXPECTED.to_string())?;
@@ -516,6 +560,29 @@ mod tests {
     }
 
     #[test]
+    fn a_card_lookup_says_who_holds_it_and_whether_it_is_lost() {
+        let query = owner_query(34935097);
+        assert!(query.ends_with("WHERE c.CardNumber = 34935097 ORDER BY c.LostCard"));
+        // The shape Net2 sent for sdk.Cards on 2026-10-02, with Tusk's aliases.
+        let reply = r#"[
+            {"lost":false,"userid":8,"firstname":"Jane","middlename":null,"surname":"Doe","department":"Year 7"},
+            {"lost":true,"userid":9,"firstname":"Old","middlename":"","surname":"Leaver","department":null}
+        ]"#;
+        assert_eq!(
+            describe_owners(reply).as_deref(),
+            Ok("In Net2: Jane Doe (user 8) · Year 7; Old Leaver (user 9) · marked lost")
+        );
+        // A card whose user row is missing still names the user ID.
+        assert_eq!(
+            describe_owners(r#"[{"lost":false,"userid":5,"firstname":null}]"#).as_deref(),
+            Ok("In Net2: (No name) (user 5)")
+        );
+        assert_eq!(describe_owners("[]").as_deref(), Ok("Not in Net2"));
+        assert!(describe_owners(r#"[{"lost":false}]"#).is_err());
+        assert!(describe_owners(r#"{"message":"no"}"#).is_err());
+    }
+
+    #[test]
     fn a_refresh_token_is_kept_only_when_net2_grants_one() {
         assert_eq!(
             refresh_token(r#"{"access_token":"a","refresh_token":"r 1"}"#).as_deref(),
@@ -697,7 +764,7 @@ mod tests {
         #[test]
         fn no_reply_or_file_header_makes_it_panic(text in ".{0,200}", bytes in prop::collection::vec(any::<u8>(), 0..200)) {
             let _ = (read_user(&text, 1), read_users(&text), read_cards(&text), read_departments(&text));
-            let _ = (lost_tokens(&text, &text), refresh_token(&text));
+            let _ = (lost_tokens(&text, &text), refresh_token(&text), describe_owners(&text));
             let _ = (access_token(&text), status_failure(500, Some(&text), true, &text));
             let _ = check_portrait("1.jpg", &bytes, bytes.len());
             let mut jpeg = vec![0xFF, 0xD8, 0xFF];

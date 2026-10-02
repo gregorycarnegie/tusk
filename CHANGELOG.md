@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Whose card is this?** on Read a card: once connected to Net2, each tapped
+  card shows who holds it, their department, and whether it is marked lost,
+  or that Net2 does not know it. The REST API cannot search by card, so this
+  is one fixed query through Net2's `customquery/querydb`, joining `sdk.Cards`
+  to `sdk.UsersEx`, with only the card number put into it. The idea of
+  querying Net2's own views comes from greboid/net2 and the HelloID
+  connector; the columns were read from a real Net2. Tested against the
+  stand-in Net2 only.
+
 ## [0.5.0-beta.1] - 2026-10-02
 
 A beta: the new Net2 features below are partly tested on a real Net2, as

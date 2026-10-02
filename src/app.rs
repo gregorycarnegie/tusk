@@ -69,6 +69,7 @@ fn page(cx: &Cx) -> impl View {
                         <span id="kind" class="chip" hidden=""></span>
                         <code id="hex" hidden=""></code>
                     </p>
+                    <p id="owner" class="owner" aria-live="polite" hidden=""></p>
                     <p id="beta" class="beta-note">
                         "Hitag2 decoding is untested on real fobs. Check this number against Net2 before relying on it."
                     </p>
@@ -81,6 +82,7 @@ fn page(cx: &Cx) -> impl View {
                                 <span class="copy-done">"Copied"</span>
                             </button>
                         }
+                        <button id="owner-connect" class="secondary">"Whose card is this?"</button>
                     </div>
                 </div>
             </section>
