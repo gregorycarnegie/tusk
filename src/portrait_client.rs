@@ -26,7 +26,7 @@ use crate::{
 /// Enough of each file for its format and dimensions.
 const HEADER_BYTES: i32 = 65_536;
 /// Space between Net2 requests, which rate limits bursts.
-const PACE_MS: i32 = 600;
+pub(crate) const PACE_MS: i32 = 600;
 
 struct Row {
     filename: String,
@@ -150,7 +150,7 @@ pub fn render(state: &State) {
     button("portrait-stop").set_hidden(!busy);
 }
 
-async fn sleep(ms: i32) {
+pub(crate) async fn sleep(ms: i32) {
     let promise = js_sys::Promise::new(&mut |resolve, _| {
         web_sys::window()
             .unwrap()
@@ -160,7 +160,7 @@ async fn sleep(ms: i32) {
     let _ = JsFuture::from(promise).await;
 }
 
-async fn header(file: &File) -> Option<Vec<u8>> {
+pub(crate) async fn header(file: &File) -> Option<Vec<u8>> {
     let end = (file.size() as i32).min(HEADER_BYTES);
     let blob = file.slice_with_i32_and_i32(0, end).ok()?;
     let buffer = JsFuture::from(blob.array_buffer()).await.ok()?;
@@ -169,7 +169,7 @@ async fn header(file: &File) -> Option<Vec<u8>> {
 
 /// Redraw any image the browser can decode as a JPEG no larger than
 /// `MAX_EDGE` on its longest side, upright and on white.
-async fn convert(file: &File) -> Result<(Blob, String), String> {
+pub(crate) async fn convert(file: &File) -> Result<(Blob, String), String> {
     let unreadable = || "This browser cannot open this image. Save it as a JPG and try again.";
     let decoding = web_sys::window()
         .unwrap()
@@ -213,7 +213,7 @@ async fn convert(file: &File) -> Result<(Blob, String), String> {
 }
 
 /// The browser's own base64, by way of a data URL.
-async fn base64(file: &Blob) -> Option<String> {
+pub(crate) async fn base64(file: &Blob) -> Option<String> {
     let reader = FileReader::new().ok()?;
     let loaded = js_sys::Promise::new(&mut |resolve, reject| {
         reader.set_onload(Some(&resolve));

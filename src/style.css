@@ -302,6 +302,12 @@
     .drop-title { font-weight: 700; }
     .drop-hint { font-size: .82rem; color: var(--muted); line-height: 1.45; }
     .options { gap: 12px; }
+    .columns summary { cursor: pointer; font-weight: 700; font-size: .92rem; }
+    .columns[open] summary { margin-bottom: 10px; }
+    .columns .hint { margin-top: 10px; }
+    .map { display: grid; gap: 8px; max-height: 20rem; overflow-y: auto; overscroll-behavior: contain; padding: 2px 6px 2px 2px; }
+    .map label { display: grid; grid-template-columns: minmax(0, 9rem) minmax(0, 1fr); align-items: center; gap: 10px; font-size: .88rem; }
+    .map label span { overflow-wrap: anywhere; }
     .checkbox { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
     .checkbox input { width: 1.05rem; height: 1.05rem; margin: .18rem 0 0; accent-color: var(--accent); flex: none; }
     .checkbox span { font-weight: 600; font-size: .92rem; line-height: 1.35; }
@@ -335,7 +341,7 @@
     .actions.stacked { display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; }
 
     .review { margin-top: 16px; overflow: hidden; }
-    #portrait-list.review { margin-top: 0; }
+    #portrait-list.review, #people-list.review { margin-top: 0; }
     .review-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px 12px 18px; border-bottom: 1px solid var(--border); }
     .review-head h2 { margin: 0; font-size: 1rem; font-weight: 700; }
     .review-foot { padding: 12px 18px; border-top: 1px solid var(--border); }
@@ -356,6 +362,9 @@
     #batch-rows tr.current-person td { background: color-mix(in srgb, var(--brand) 13%, var(--surface)); }
     #batch-rows tr.current-person td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
     #portrait-list table { min-width: 46rem; }
+    .anyway { margin-top: 6px; color: var(--text); }
+    .anyway span { font-size: .85rem; }
+    #people-rows td:first-child { font: .8rem/1.4 var(--mono); color: var(--muted); }
     #portrait-rows td:first-child { white-space: nowrap; }
     #portrait-rows img { width: 2.75rem; height: 2.75rem; object-fit: cover; border-radius: 8px; vertical-align: middle; margin-right: .6rem; box-shadow: 0 0 0 1px var(--border); }
     small.converted { display: block; color: var(--muted); margin-top: .2rem; }
@@ -396,7 +405,7 @@
     @media (max-width: 900px) {
       .reading, .workspace { grid-template-columns: minmax(0, 1fr); }
       .stage { min-height: 300px; }
-      .workspace:has(#batch-session:not([hidden]), #portrait-list:not([hidden])) .work { order: -1; }
+      .workspace:has(#batch-session:not([hidden]), #portrait-list:not([hidden]), #people-list:not([hidden])) .work { order: -1; }
     }
     @media (max-width: 720px) {
       :root { --gutter: 16px; }

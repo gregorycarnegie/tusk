@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Add people**, a new tab that creates Net2 users from a spreadsheet: names,
+  department, activation and expiry dates, PIN, phone numbers, Net2's custom
+  fields (by the site's own names for them), and a photo file name. Each
+  person is given their department, access levels (several in a cell, split
+  by semicolons) and portrait as they are created. Check against Net2 comes
+  first and holds back a row that already has a User ID, a department or
+  access level Net2 lacks, a photo that was not chosen, and dates it cannot
+  read for certain (day before month, as UK sites write them). Someone whose
+  first name and surname Net2 or an earlier row already has is held back too,
+  with an **Add anyway** tick for when it really is a different person. The
+  download is the sheet with each new User ID filled in, so running it again
+  adds nobody twice. Tested against the stand-in Net2 only: `POST /users`,
+  the department and door permission `PUT`s, and the expiry time (end of the
+  day, 23:59) are not yet checked on a real Net2.
+- Spreadsheets as well as CSV: Batch assign and Add people read tab-separated
+  text and the first sheet of an Excel (xlsx, xlsm, xlsb, xls) or
+  OpenDocument (ods) workbook, with [calamine](https://crates.io/crates/calamine).
+  Downloads are always CSV.
+- Column mapping: headings no longer have to be spelled Net2's way. Each
+  field is matched to the one heading that means it (`Forename`, `Last name`,
+  `FIRST_NAME`...), and a picker per field lets you choose another column, or
+  one no heading names.
+
 - **Whose card is this?** on Read a card: once connected to Net2, each tapped
   card shows who holds it, their department, and whether it is marked lost,
   or that Net2 does not know it. The REST API cannot search by card, so this

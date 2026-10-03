@@ -10,8 +10,9 @@ Read tokens from a Paxton Net2 USB desktop reader in the browser, over WebHID.
 No drivers, no Net2 software, no server — put a card on the reader and the
 token number appears, as Net2 would show it.
 
-It can also talk to Net2 itself: upload ID card portraits, and save each
-tapped card straight to the right person, with no CSV import in between.
+It can also talk to Net2 itself: add people from a spreadsheet with their
+portraits, upload ID card portraits, and save each tapped card straight to the
+right person, with no CSV import in between.
 See [Working with Net2 directly](#working-with-net2-directly).
 
 **Try it: <https://gregorycarnegie.github.io/tusk/>** — in Chrome or Edge,
@@ -21,19 +22,7 @@ Mifare cards are tested. Paxton's own Hitag2 fobs are **beta**: decoded the
 way Net2 does, but not yet tried on a real fob, so check the number against
 Net2 before relying on it.
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ Tusk v0.5.0      [Read a card] [Batch assign] [Portraits]        │
-│ READER ● Ready - present a token   NET2 ● Connected  (Disconnect)│
-├──────────────────────────────────────────────────────────────────┤
-│  ╭────────────(═══)──────────╮   CARD HOLDER                     │
-│  │ NET2 TOKEN  MIFARE     )) │   Jane Doe (user 8) · Year 7      │
-│  │                           │                                   │
-│  │ 34935097                  │   COPY                            │
-│  │ 5B7D4039                  │   [Net2 number]  [Raw hex]        │
-│  ╰───────────────────────────╯                                   │
-└──────────────────────────────────────────────────────────────────┘
-```
+![Read a card: the token number on a drawn MIFARE card, and who holds it in Net2](snapshots/read-a-card.png)
 
 The reader and Net2 connections sit under the header on every tab, and
 **Sign in** there opens the Net2 sign-in from wherever you are. Light and
@@ -94,8 +83,13 @@ permission when it is unplugged and the page cannot reconnect by itself.
 
 Open **Batch assign cards** (or `/#batch` locally and `/tusk/#batch` on Pages).
 
-1. Connect the reader and choose a Net2 import **CSV UTF-8** file with
-   `First name`, `Surname`, and `Card Number` columns.
+![Batch assign: a spreadsheet's columns matched on the left, the next person to tap and the assignments so far on the right](snapshots/batch-assign.png)
+
+1. Connect the reader and choose a spreadsheet: a Net2 import CSV, any CSV
+   UTF-8 or tab-separated file, or the first sheet of an Excel (xlsx, xlsm,
+   xlsb, xls) or OpenDocument (ods) workbook. It needs first name, surname and
+   card number columns. Headings such as `Forename` or `Last name` are matched
+   for you; under **Columns**, pick any column the headings do not name.
 2. Existing card numbers are kept by default. To reissue cards, select
    **Replace existing card numbers** before loading the file.
 3. Leave the format on **Net2 decimal**, or select **Raw card hex** before
@@ -107,7 +101,8 @@ Open **Batch assign cards** (or `/#batch` locally and `/tusk/#batch` on Pages).
 5. Use **Skip person** for an absent student, **Undo last step** to correct a
    mistake, and **Download CSV** to save the result for Net2's import wizard.
 
-Download works before the queue is complete, so you can save progress. The file
+Download works before the queue is complete, so you can save progress. It is
+always a CSV, whatever kind of file was loaded. The file
 keeps its columns, order, leading zeros, Unicode, quoted/multiline fields, and
 trailing empty fields; only newly assigned `Card Number` values change. CSV
 quoting is normalized and rows use CRLF. Skipped/unassigned people retain their
@@ -121,7 +116,7 @@ Hitag2 decoding remains beta and should be checked against Net2 on real fobs.
 
 ## Working with Net2 directly
 
-The card holder on **Read a card**, **Upload portraits**, and the **People
+The card holder on **Read a card**, **Add people**, **Upload portraits**, and the **People
 already in Net2** option under **Batch assign cards** use the Net2 Local API,
 signed in from the page itself: **Sign in** under the header, from any tab. Net2's
 own web server allows this; nothing passes through any other server, and
@@ -151,6 +146,8 @@ You need:
   let the page reach devices on your local network; allow it. See
   [Trusting the Net2 certificate](#trusting-the-net2-certificate).
 
+![Upload portraits: each photo beside the Net2 person it will go to, before anything is uploaded](snapshots/portraits.png)
+
 **Portraits.** Name each photo with the person's Net2 user ID (`12345.jpg`,
 no leading zeros). A JPG of up to 3.5 MB and 40 megapixels is uploaded
 exactly as it is. Anything else the browser can open (PNG, WebP, GIF, BMP,
@@ -162,6 +159,30 @@ who already have a portrait are skipped unless you tick **Replace portraits
 people already have**. **Upload portraits** asks for confirmation; each upload
 re-reads the person first and stops if they changed since the check. If a
 result says Net2 did not confirm the change, look in Net2 before trying again.
+
+![Add people: a spreadsheet checked against Net2, with a name match that can be added anyway and rows held back for a missing department or photo](snapshots/add-people.png)
+
+**Add people.** Sign in, choose a spreadsheet with one new person per row,
+and choose the photos its photo column names. Under **Columns** each Net2
+field is matched to a heading: names, department, access levels (several in
+one cell, split by semicolons: `Working hours; Car park`), activation and expiration
+dates, PIN, telephone, extension, fax, the photo's file name, a User ID, and
+Net2's custom fields under the names your Net2 gives them. Dates are read as
+2027-07-31, 2027-Jul-31 (as in Net2's import CSV) or 31/07/2027, day before
+month; anything else is refused rather than guessed. **Check against Net2**
+reads Net2's people, departments and access levels, and holds back a row that
+already has a User ID, a department or access level Net2 does not have (Tusk
+never creates one), a photo that was not chosen, and any row it cannot read.
+Someone whose first name and surname Net2 already has, or an earlier row of
+the sheet, is held back too, but with an **Add anyway** tick: two people can
+share a name. **Add people to Net2** asks for confirmation, then creates each
+person, puts them in their department, gives them their access levels and
+uploads their portrait, converted to a JPG when needed as for portraits.
+**Download with User IDs** saves the sheet with each new person's User ID
+filled in; load that file again and nobody is added twice. Then give out cards with **People already in
+Net2** under **Batch assign cards**. Adding people has only been tested
+against a stand-in for Net2 so far, so check the first few in Net2, including
+their expiry date, department and access levels.
 
 **Card holder.** Once signed in, every card you tap on **Read a card** shows
 who holds it in Net2, with their user ID and
@@ -293,7 +314,7 @@ worth guarding against when the format was reverse engineered rather than
 documented.
 
 [CI](.github/workflows/ci.yml) runs on every push and pull request: `cargo fmt
---check`, clippy with warnings as errors on both the wasm target and the host,
+--check` and `topcoat fmt --check src` for the `view!` templates, clippy with warnings as errors on both the wasm target and the host,
 and both sets of tests. The build renders the page with Topcoat, packages the
 WebAssembly module with wasm-bindgen, and smoke-tests the exported site under a
 repository subpath. Each push to `master` that passes is published to GitHub Pages.
@@ -308,16 +329,20 @@ repository subpath. Each push to `master` that passes is published to GitHub Pag
 | `src/app.rs` | Topcoat page template and icons |
 | `src/main.rs` | Static HTML exporter |
 | `src/client.rs` | Browser controls and DOM updates |
-| `src/batch.rs` | CSV preservation, assignment queue, and duplicate checks |
+| `src/sheet.rs` | Reading CSV, TSV and workbooks, and guessing columns from headings |
+| `src/batch.rs` | Field preservation, assignment queue, and duplicate checks |
 | `src/batch_client.rs` | Batch upload, guided prompts, review, and download |
 | `src/net2.rs` | Net2 API errors and records, and portrait file rules |
 | `src/tsql.rs` | SQL Server dialect for sea-query, for Net2's `customquery` |
 | `src/net2_client.rs` | Net2 sign-in, requests, and saving tapped cards |
 | `src/portrait_client.rs` | Portrait matching, checking, and upload |
+| `src/people.rs` | New Net2 users from sheet rows: fields, dates, and the record sent |
+| `src/people_client.rs` | Adding people: checking against Net2, creating, and download |
 | `src/lib.rs` | Shared protocol library and WebAssembly entry point |
 | `PROTOCOL.md` | The reverse-engineered protocol |
 | `src/style.css` | Page styling |
 | `tests/static_site.py` | Exported-site browser smoke test |
+| `snapshots/` | README screenshots, taken against the smoke test's stand-in reader and Net2 |
 | `.cargo/config.toml` | Unstable WebHID bindings, browser-test alias |
 
 ## Licence

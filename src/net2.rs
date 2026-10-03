@@ -239,7 +239,9 @@ pub fn read_users(body: &str) -> Result<Vec<User>, String> {
         .collect()
 }
 
-pub fn read_departments(body: &str) -> Vec<(i32, String)> {
+/// Departments or access levels: Net2 lists both as `{id, name}`. Sorted by
+/// name, as a picker shows them.
+pub fn read_named(body: &str) -> Vec<(i32, String)> {
     let list: Vec<Value> = serde_json::from_str(body).unwrap_or_default();
     let mut departments: Vec<_> = list
         .iter()
@@ -250,6 +252,45 @@ pub fn read_departments(body: &str) -> Vec<(i32, String)> {
         .collect();
     departments.sort_by_key(|(_, name)| name.to_lowercase());
     departments
+}
+
+/// Net2's custom fields, or its defaults when it does not list them.
+pub fn read_custom_fields(body: &str) -> Vec<crate::people::Custom> {
+    let list: Vec<Value> = serde_json::from_str(body).unwrap_or_default();
+    let fields: Vec<_> = list
+        .iter()
+        .filter_map(|value| {
+            Some(crate::people::Custom {
+                id: field(value, "id")?.as_i64()?.try_into().ok()?,
+                name: Some(text(value, "name")).filter(|name| !name.is_empty())?,
+                max: field(value, "maxLength")
+                    .and_then(Value::as_u64)
+                    .filter(|&max| max > 0)
+                    .map(|max| max as usize),
+            })
+        })
+        .collect();
+    if fields.is_empty() {
+        crate::people::default_custom()
+    } else {
+        fields
+    }
+}
+
+/// The new user's ID from Net2's reply to `POST /users`, which must be the
+/// person that was sent.
+pub fn created_id(body: &str, first: &str, last: &str) -> Result<i32, String> {
+    let value: Value = serde_json::from_str(body).map_err(|_| UNEXPECTED.to_string())?;
+    let id = field(&value, "id")
+        .and_then(Value::as_i64)
+        .and_then(|id| i32::try_from(id).ok())
+        .filter(|&id| id > 0);
+    match id {
+        Some(id) if text(&value, "firstName") == first && text(&value, "lastName") == last => {
+            Ok(id)
+        }
+        _ => Err(UNEXPECTED.into()),
+    }
 }
 
 /// Who holds a card, from Net2's own tables: the REST API cannot search by
@@ -494,7 +535,7 @@ mod tests {
         assert!(read_users(r#"[{"id":1,"hasImage":false},{"name":"?"}]"#).is_err());
         assert_eq!(read_users("[]"), Ok(vec![]));
         assert_eq!(
-            read_departments(r#"[{"id":2,"name":"year 8"},{"id":1,"name":"Year 7"}]"#),
+            read_named(r#"[{"id":2,"name":"year 8"},{"id":1,"name":"Year 7"}]"#),
             vec![(1, "Year 7".into()), (2, "year 8".into())]
         );
         assert_eq!(
@@ -611,6 +652,42 @@ mod tests {
         assert_eq!(describe_owners("[]").as_deref(), Ok("Not in Net2"));
         assert!(describe_owners(r#"[{"lost":false}]"#).is_err());
         assert!(describe_owners(r#"{"message":"no"}"#).is_err());
+    }
+
+    #[test]
+    fn a_new_user_is_known_by_the_id_net2_gave_the_person_sent() {
+        let reply = r#"{"Id":41,"FirstName":"Riya","LastName":"Patel","HasImage":false}"#;
+        assert_eq!(created_id(reply, "Riya", "Patel"), Ok(41));
+        assert!(created_id(reply, "Ada", "Patel").is_err());
+        assert!(
+            created_id(
+                r#"{"id":0,"firstName":"Riya","lastName":"Patel"}"#,
+                "Riya",
+                "Patel"
+            )
+            .is_err()
+        );
+        assert!(created_id("", "Riya", "Patel").is_err());
+        let named = read_custom_fields(
+            r#"[{"id":14,"name":"Admission no","maxLength":20},{"id":13,"name":"Notes","maxLength":0},{"id":2}]"#,
+        );
+        assert_eq!(
+            named,
+            [
+                crate::people::Custom {
+                    id: 14,
+                    name: "Admission no".into(),
+                    max: Some(20)
+                },
+                crate::people::Custom {
+                    id: 13,
+                    name: "Notes".into(),
+                    max: None
+                },
+            ]
+        );
+        assert_eq!(read_custom_fields("nope").len(), 14);
+        assert_eq!(read_custom_fields("[]")[13].name, "Personnel number");
     }
 
     #[test]
@@ -742,7 +819,7 @@ mod tests {
         assert_eq!(user("Ada", "King", "Lovelace").name(), "Ada King Lovelace");
         assert_eq!(user("", "", "Lovelace").name(), "Lovelace");
         assert_eq!(user("", "", "").name(), "(No name)");
-        assert_eq!(read_departments("not json"), vec![]);
+        assert_eq!(read_named("not json"), vec![]);
         assert!(read_cards("{}").is_err());
     }
 
@@ -794,8 +871,9 @@ mod tests {
         /// Replies come from a server Tusk does not control.
         #[test]
         fn no_reply_or_file_header_makes_it_panic(text in ".{0,200}", bytes in prop::collection::vec(any::<u8>(), 0..200)) {
-            let _ = (read_user(&text, 1), read_users(&text), read_cards(&text), read_departments(&text));
+            let _ = (read_user(&text, 1), read_users(&text), read_cards(&text), read_named(&text));
             let _ = (lost_tokens(&text, &text), refresh_token(&text), describe_owners(&text));
+            let _ = (read_custom_fields(&text), created_id(&text, &text, &text));
             let _ = (access_token(&text), status_failure(500, Some(&text), true, &text));
             let _ = check_portrait("1.jpg", &bytes, bytes.len());
             let mut jpeg = vec![0xFF, 0xD8, 0xFF];

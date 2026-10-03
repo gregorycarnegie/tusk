@@ -1,7 +1,7 @@
-//! CSV data and the assignment queue. Only Card Number changes on export.
+//! Spreadsheet data and the assignment queue. Only Card Number changes on export.
 //! A queue loaded from Net2 is direct: each tap is saved to Net2 first, and
 //! only counts as assigned once Net2 has accepted it.
-use crate::{net2::User, token::Token};
+use crate::{net2::User, sheet::Sheet, token::Token};
 
 #[derive(Clone, Copy, Default, PartialEq)]
 pub enum Format {
@@ -51,61 +51,46 @@ pub struct Batch {
     bom: bool,
 }
 
+/// The columns a queue needs, in the order `Batch::new` takes them: what each
+/// is called on screen, then other headings that mean the same.
+pub const COLUMNS: [&[&str]; 3] = [
+    &["First name", "Forename", "Given name"],
+    &["Surname", "Last name", "Family name"],
+    &["Card Number", "Card", "Card no"],
+];
+
 impl Batch {
-    pub fn parse(bytes: &[u8], replace: bool, format: Format) -> Result<Self, String> {
-        let text = std::str::from_utf8(bytes)
-            .map_err(|_| "Save the spreadsheet as CSV UTF-8, then choose it again.".to_string())?;
-        let mut reader = csv::ReaderBuilder::new()
-            .flexible(true)
-            .from_reader(text.trim_start_matches('\u{feff}').as_bytes());
-        let headers: Vec<String> = reader
-            .headers()
-            .map_err(|e| e.to_string())?
-            .iter()
-            .map(str::to_owned)
-            .collect();
-        let column = |name: &str| {
-            let found: Vec<_> = headers
-                .iter()
-                .enumerate()
-                .filter(|(_, h)| h.trim().eq_ignore_ascii_case(name))
-                .map(|(i, _)| i)
-                .collect();
-            match found.as_slice() {
-                [index] => Ok(*index),
-                _ => Err(format!("The CSV must contain exactly one {name} column.")),
-            }
-        };
-        let (first_column, surname_column, card_column) = (
-            column("First name")?,
-            column("Surname")?,
-            column("Card Number")?,
-        );
+    /// `columns` are the sheet's First name, Surname and Card Number columns.
+    pub fn new(
+        sheet: Sheet,
+        columns: [Option<usize>; 3],
+        replace: bool,
+        format: Format,
+    ) -> Result<Self, String> {
+        let mut picked = [0; 3];
+        for ((index, column), names) in picked.iter_mut().zip(columns).zip(COLUMNS) {
+            *index = column.ok_or_else(|| format!("Pick the {} column.", names[0]))?;
+        }
+        let [first_column, surname_column, card_column] = picked;
+        if first_column == surname_column
+            || surname_column == card_column
+            || first_column == card_column
+        {
+            return Err(
+                "Pick a different column for each of First name, Surname and Card Number.".into(),
+            );
+        }
         let mut rows = Vec::new();
-        for record in reader.records() {
-            if rows.len() == 10_000 {
-                return Err("Please split this CSV into batches of at most 10,000 people.".into());
-            }
-            let record = record.map_err(|e| format!("Could not read CSV: {e}"))?;
-            // Net2's sample has an extra trailing comma. Keep those empty fields,
-            // but reject non-empty extras or short rows that could shift a name/card.
-            if record.len() < headers.len()
-                || record.iter().skip(headers.len()).any(|s| !s.is_empty())
-            {
+        for fields in sheet.rows {
+            if fields[first_column].trim().is_empty() && fields[surname_column].trim().is_empty() {
                 return Err(format!(
-                    "CSV row {} does not match the header columns.",
-                    rows.len() + 2
-                ));
-            }
-            if record[first_column].trim().is_empty() && record[surname_column].trim().is_empty() {
-                return Err(format!(
-                    "CSV row {} has no first name or surname.",
+                    "Row {} has no first name or surname.",
                     rows.len() + 2
                 ));
             }
             rows.push(Row {
-                eligible: replace || record[card_column].trim().is_empty(),
-                fields: record.iter().map(str::to_owned).collect(),
+                eligible: replace || fields[card_column].trim().is_empty(),
+                fields,
                 assigned: None,
                 skipped: false,
                 unsure: false,
@@ -113,10 +98,10 @@ impl Batch {
             });
         }
         if rows.is_empty() {
-            return Err("The CSV has headers but no people to assign cards to.".into());
+            return Err("The sheet has headers but no people to assign cards to.".into());
         }
         Ok(Self {
-            headers,
+            headers: sheet.headers,
             rows,
             format,
             running: false,
@@ -130,7 +115,7 @@ impl Batch {
             surname_column,
             history: Vec::new(),
             last_seen: None,
-            bom: bytes.starts_with(b"\xef\xbb\xbf"),
+            bom: sheet.bom,
         })
     }
 
@@ -141,18 +126,24 @@ impl Batch {
         if users.is_empty() {
             return Err("Net2 has no users there.".into());
         }
-        let mut output = csv::Writer::from_writer(Vec::new());
-        let mut write = |fields: &[&str]| output.write_record(fields).map_err(|e| e.to_string());
-        write(&["User ID", "First name", "Surname", "Card Number"])?;
-        for user in users {
-            let first = match [user.first.as_str(), &user.middle].join(" ").trim() {
-                "" if user.last.is_empty() => "(No name)".to_string(),
-                first => first.to_string(),
-            };
-            write(&[&user.id.to_string(), &first, &user.last, ""])?;
-        }
-        let bytes = output.into_inner().map_err(|e| e.to_string())?;
-        let mut batch = Self::parse(&bytes, replace, Format::Decimal)?;
+        let rows = users
+            .iter()
+            .map(|user| {
+                let first = match [user.first.as_str(), &user.middle].join(" ").trim() {
+                    "" if user.last.is_empty() => "(No name)".to_string(),
+                    first => first.to_string(),
+                };
+                vec![user.id.to_string(), first, user.last.clone(), String::new()]
+            })
+            .collect();
+        let sheet = Sheet {
+            headers: ["User ID", "First name", "Surname", "Card Number"]
+                .map(String::from)
+                .to_vec(),
+            rows,
+            bom: false,
+        };
+        let mut batch = Self::new(sheet, [Some(1), Some(2), Some(3)], replace, Format::Decimal)?;
         batch.net2_ids = Some(users.iter().map(|user| user.id).collect());
         for (row, user) in batch.rows.iter_mut().zip(users) {
             row.expired = user.expired(today);
@@ -354,24 +345,12 @@ impl Batch {
     }
 
     pub fn export(&self) -> Result<Vec<u8>, String> {
-        let mut writer = csv::WriterBuilder::new()
-            .flexible(true)
-            .terminator(csv::Terminator::CRLF)
-            .from_writer(Vec::new());
-        writer
-            .write_record(&self.headers)
-            .map_err(|e| e.to_string())?;
-        for (index, row) in self.rows.iter().enumerate() {
+        let rows = self.rows.iter().enumerate().map(|(index, row)| {
             let mut fields = row.fields.clone();
             fields[self.card_column] = self.value(index);
-            writer.write_record(fields).map_err(|e| e.to_string())?;
-        }
-        let bytes = writer.into_inner().map_err(|e| e.to_string())?;
-        Ok(if self.bom {
-            [b"\xef\xbb\xbf".as_slice(), &bytes].concat()
-        } else {
-            bytes
-        })
+            fields
+        });
+        crate::sheet::write_csv(&self.headers, rows, self.bom)
     }
 }
 
@@ -393,10 +372,17 @@ mod tests {
     use super::*;
     use crate::token::Read;
 
+    /// A queue from a file, its columns found by their headings.
+    fn parse(bytes: &[u8], replace: bool, format: Format) -> Result<Batch, String> {
+        let sheet = crate::sheet::read("people.csv", bytes)?;
+        let columns = COLUMNS.map(|names| crate::sheet::guess(&sheet.headers, names));
+        Batch::new(sheet, columns, replace, format)
+    }
+
     #[test]
     fn guided_assignment_preserves_csv_and_requires_new_cards() {
         let input = "\u{feff}Surname,First name,Card Number,Notes\r\nDoe,John,,\"Comma, quote \"\" and\nnewline\"\r\nDawkins,Jane,,,\r\nKept,Student,0034935098,unchanged\r\n";
-        let mut batch = Batch::parse(input.as_bytes(), false, Format::Decimal).unwrap();
+        let mut batch = parse(input.as_bytes(), false, Format::Decimal).unwrap();
         let card = Token {
             read: Read::Mifare,
             hex: "5B7D4039".into(),
@@ -426,7 +412,7 @@ mod tests {
         batch.observe(Some(&next));
         assert!(batch.current().is_none());
         let exported = batch.export().unwrap();
-        let reread = Batch::parse(&exported, false, Format::Decimal).unwrap();
+        let reread = parse(&exported, false, Format::Decimal).unwrap();
         assert!(exported.starts_with(b"\xef\xbb\xbf"));
         assert_eq!(reread.rows[0].fields[3], "Comma, quote \" and\nnewline");
         assert_eq!(reread.rows[1].fields.len(), 5); // Sample's trailing empty field.
@@ -441,7 +427,7 @@ mod tests {
         batch.format = Format::Hex;
         assert_eq!(batch.value(0), "5B7D4039");
         assert!(
-            Batch::parse(
+            parse(
                 b"Surname,First name,Card Number\nSmith,John,12345678,\n",
                 true,
                 Format::Decimal
@@ -457,9 +443,9 @@ mod tests {
             "Surname,First name,Card Number\n,,",
             "Surname,First name,Card Number",
         ] {
-            assert!(Batch::parse(invalid.as_bytes(), false, Format::Decimal).is_err());
+            assert!(parse(invalid.as_bytes(), false, Format::Decimal).is_err());
         }
-        assert!(Batch::parse(&[0xff], false, Format::Decimal).is_err());
+        assert!(parse(&[0xff], false, Format::Decimal).is_err());
     }
 
     #[test]
@@ -522,7 +508,7 @@ mod tests {
 
     fn queue(rows: &str) -> Batch {
         let csv = format!("Surname,First name,Card Number\n{rows}");
-        Batch::parse(csv.as_bytes(), false, Format::Decimal).unwrap()
+        parse(csv.as_bytes(), false, Format::Decimal).unwrap()
     }
 
     #[test]
@@ -630,7 +616,7 @@ mod tests {
 
     #[test]
     fn hex_numbers_match_whatever_their_case_or_leading_zeros() {
-        let mut batch = Batch::parse(
+        let mut batch = parse(
             b"Surname,First name,Card Number\nDoe,Jane,\nKept,Old,005b7d4039\n",
             false,
             Format::Hex,
@@ -645,11 +631,11 @@ mod tests {
     #[test]
     fn a_csv_must_name_each_column_once_and_stay_a_manageable_size() {
         let twice = "Surname,First name,Card Number,card number\nDoe,Jane,,\n";
-        assert!(Batch::parse(twice.as_bytes(), false, Format::Decimal).is_err());
+        assert!(parse(twice.as_bytes(), false, Format::Decimal).is_err());
         let rows = |n: usize| {
             let mut csv = "Surname,First name,Card Number\n".to_string();
             csv.push_str(&"Doe,Jane,\n".repeat(n));
-            Batch::parse(csv.as_bytes(), false, Format::Decimal)
+            parse(csv.as_bytes(), false, Format::Decimal)
         };
         assert_eq!(rows(10_000).unwrap().rows.len(), 10_000);
         assert!(rows(10_001).is_err());
@@ -719,10 +705,10 @@ mod tests {
             }
             let mut input = if bom { b"\xef\xbb\xbf".to_vec() } else { vec![] };
             input.extend(writer.into_inner().unwrap());
-            let batch = Batch::parse(&input, false, Format::Decimal).unwrap();
+            let batch = parse(&input, false, Format::Decimal).unwrap();
             let exported = batch.export().unwrap();
             prop_assert_eq!(exported.starts_with(b"\xef\xbb\xbf"), bom);
-            let reread = Batch::parse(&exported, false, Format::Decimal).unwrap();
+            let reread = parse(&exported, false, Format::Decimal).unwrap();
             for (row, (first, surname, number, notes)) in reread.rows.iter().zip(&rows) {
                 prop_assert_eq!(&row.fields, &[first.clone(), surname.clone(), number.clone(), notes.clone()]);
             }
@@ -730,7 +716,7 @@ mod tests {
 
         #[test]
         fn no_file_makes_parsing_panic(bytes in prop::collection::vec(any::<u8>(), 0..300)) {
-            let _ = Batch::parse(&bytes, false, Format::Decimal);
+            let _ = parse(&bytes, false, Format::Decimal);
         }
     }
 }

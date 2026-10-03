@@ -66,7 +66,7 @@ Object.defineProperty(navigator, 'clipboard', {value: {
 // A Net2 Local API at https://net2.test: users 7 and 12 have no portrait or
 // card, 8 has both, and 9's access has expired. Every request is recorded in
 // net2.calls. Set net2.token to anything else to expire the session.
-window.net2 = {calls: [], cards: {8: ['11111111']}, lost: [], images: {}, token: 'T0K', queries: []};
+window.net2 = {calls: [], cards: {8: ['11111111']}, lost: [], images: {}, token: 'T0K', queries: [], created: []};
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init = {}) => {
     const api = 'https://net2.test/api/v1';
@@ -105,6 +105,17 @@ window.fetch = async (url, init = {}) => {
                                      middlename: null, surname: users[id].lastName, department: 'Year 7'})));
     }
     if (path === '/departments') return reply(200, [{id: 3, name: 'Year 7'}]);
+    if (path === '/users' && method === 'GET') return reply(200, Object.values(users).concat(net2.created));
+    if (path === '/users' && method === 'POST') {
+        const user = {...body, id: 40 + net2.created.length, hasImage: false};
+        net2.created.push(user);
+        return reply(201, user);
+    }
+    if (path === '/accesslevels') return reply(200, [{id: 2, name: 'Car park'}, {id: 1, name: 'Working hours'}]);
+    if ((m = path.match(/^\/users\/(\d+)\/doorpermissionset$/)) && method === 'PUT') return reply(204);
+    if (path === '/users/customfieldnames')
+        return reply(200, [{id: 14, name: 'Admission number', maxLength: 50}]);
+    if ((m = path.match(/^\/users\/(\d+)\/departments$/)) && method === 'PUT') return reply(204);
     if (path === '/departments/3/users') return reply(200, [users[8], users[9], users[12]]);
     if ((m = path.match(/^\/users\/(\d+)$/))) return users[m[1]] ? reply(200, users[m[1]]) : reply(404);
     if ((m = path.match(/^\/users\/(\d+)\/image$/)) && method === 'PUT') {
@@ -166,15 +177,15 @@ def main():
                 time.sleep(.05)
             raise AssertionError(f'Timed out: {expression}; errors: {js("return window.errors")}')
 
-        def upload(name, content):
+        def upload(name, content, field='batch-file'):
             js(f"""
                 const transfer = new DataTransfer();
                 transfer.items.add(new File([{json.dumps(content)}], {json.dumps(name)}, {{type: 'text/csv'}}));
-                const input = document.getElementById('batch-file');
+                const input = document.getElementById('{field}');
                 input.files = transfer.files;
                 input.dispatchEvent(new Event('change', {{bubbles: true}}));
             """)
-            wait("!document.getElementById('batch-file').disabled")
+            wait(f"!document.getElementById('{field}').disabled")
 
         def downloaded(name):
             path = Path(directory) / 'downloads' / name
@@ -276,6 +287,14 @@ def main():
             upload('bad.csv', 'Name,Card Number\nWrong,123\n')
             assert js("return document.getElementById('batch-error').textContent.includes('First name')")
             assert js("return document.getElementById('batch-progress').textContent.includes('2 assigned')")
+            # Other headings for the same columns are matched; one no heading
+            # names is picked by hand, and the queue is rebuilt from it.
+            upload('tabs.tsv', 'Forename\tFAMILY_NAME\tTag\nAda\tLovelace\t\n')
+            assert js("return document.getElementById('batch-error').textContent") == 'Pick the Card Number column.'
+            assert js("return document.getElementById('batch-columns').open")
+            js("""const card = document.querySelectorAll('#batch-map select')[2];
+                  card.value = '2'; card.dispatchEvent(new Event('change', {bubbles: true}));""")
+            wait("document.getElementById('batch-prompt').textContent === 'Next: Ada Lovelace'")
             # Existing numbers are kept by default, and replacement is an explicit option.
             sample = (root / 'tests' / 'fixtures' / 'net2-import.csv').read_text(encoding='utf-8')
             upload('sample.csv', sample)
@@ -373,6 +392,95 @@ def main():
             assert js("return net2.images[7] === jpegBase64")
             assert js("return net2.images[12]").startswith('/9j/')
 
+            js("location.hash = 'people'")
+            wait("!document.getElementById('people-tool').hidden && document.getElementById('people-signin').hidden")
+            people = io.StringIO(newline='')
+            csv.writer(people).writerows([
+                ['Forename', 'Surname', 'Dept', 'Access level', 'Expiry', 'Admission number', 'Photo'],
+                ['Riya', 'Patel', 'year 7', 'working hours; Car park', '31/07/2027', 'A1', r'C:\photos\Riya.PNG'],
+                ['Ada', 'Lovelace', '', '', '', '', ''],
+                ['Tom', 'Hall', 'Year 9', '', '', '', ''],
+                ['Sam', 'Lee', '', '', '', '', 'sam.jpg'],
+                ['Kim', 'Wu', '', '', '07/31/2027', '', ''],
+                ['riya', 'PATEL', '', '', '', '', ''],
+                ['Zoe', 'King', '', 'Night shift', '', '', ''],
+            ])
+            upload('people.csv', people.getvalue(), 'people-file')
+            wait("document.querySelectorAll('#people-rows tr').length === 7")
+            # Net2's own name for custom field 14 is what the column matched.
+            assert js("return [...document.querySelectorAll('#people-map label')].at(-1).textContent").startswith('Admission number')
+            assert js("return document.querySelectorAll('#people-map select')[13].value") == '5'
+            assert js("return document.querySelectorAll('#people-map select')[1].selectedOptions[0].textContent") == 'Not used'
+            js("""const transfer = new DataTransfer();
+                  transfer.items.add(new File([png], 'riya.png'));
+                  const input = document.getElementById('people-photos');
+                  input.files = transfer.files;
+                  input.dispatchEvent(new Event('change'));
+                  document.getElementById('people-check').click();""")
+            wait("document.getElementById('people-notice').textContent.startsWith('Checked: 1 ready, 6 held back')")
+            result = "[...document.querySelectorAll('#people-rows td:last-child > span')].map(span => span.textContent)"
+            results = js(f"return {result}")
+            assert results == [
+                'Ready',
+                'Same name as user 7 in Net2.',
+                'Net2 has no department Year 9.',
+                'No photo called sam.jpg was chosen.',
+                results[4],
+                'Same name as row 2.',
+                'Net2 has no access level Night shift.',
+            ], results
+            assert results[4].startswith('Expiration date:'), results
+            # Only a name match can be added anyway.
+            offered = "[...document.querySelectorAll('#people-rows .anyway')].map(label => !label.hidden)"
+            assert js(f"return {offered}") == [False, True, False, False, False, True, False]
+            for width, label in [(1100, 'desktop'), (390, 'mobile')]:
+                command('goog/cdp/execute', {'cmd': 'Emulation.setDeviceMetricsOverride', 'params': {
+                    'width': width, 'height': 1400, 'deviceScaleFactor': 1, 'mobile': False,
+                }})
+                assert js('return document.documentElement.scrollWidth <= innerWidth')
+                (root / 'target' / f'people-{label}.png').write_bytes(base64.b64decode(request('GET', f'/session/{session}/screenshot')))
+            command('goog/cdp/execute', {'cmd': 'Emulation.clearDeviceMetricsOverride', 'params': {}})
+            # The Ada Lovelace in the sheet is someone else: add her anyway.
+            js("document.querySelector('#people-rows tr:nth-child(2) .anyway input').click()")
+            wait("document.getElementById('people-create').textContent === 'Add 2 people to Net2'")
+            js("window.asked = []; window.confirm = question => (asked.push(question), true)")
+            js("document.getElementById('people-create').click()")
+            wait("document.getElementById('people-notice').textContent.startsWith('Done. 2 of 2 added')")
+            assert '1 of them share a name' in js("return asked[0]"), js("return asked")
+            js("window.confirm = () => true")
+            assert js("return net2.created.map(user => user.id)") == [40, 41]
+            assert js("return net2.created[0]") == {
+                'firstName': 'Riya', 'middleName': '', 'lastName': 'Patel', 'isAlarmUser': False,
+                'expiryDate': '2027-07-31T23:59:00', 'customFields': [{'id': 14, 'value': 'A1'}],
+                'id': 40, 'hasImage': False,
+            }
+            writes = js("return net2.calls.filter(c => /^\\/users\\/4\\d\\//.test(c.path)).map(c => [c.method, c.path, c.body])")
+            assert [w[:2] for w in writes] == [
+                ['PUT', '/users/40/departments'], ['PUT', '/users/40/doorpermissionset'], ['PUT', '/users/40/image'],
+            ], writes
+            assert writes[0][2] == {'id': 3, 'name': 'Year 7'}, writes
+            assert writes[1][2] == {'accessLevels': [1, 2], 'individualPermissions': []}, writes
+            assert js("return net2.images[40]").startswith('/9j/')
+            results = js(f"return {result}")
+            assert results[:2] == ['Added as user 40.', 'Added as user 41.'], results
+            js("document.getElementById('people-download').click()")
+            people_back = downloaded('people-net2.csv')
+            assert [row[-1] for row in people_back[:4]] == ['User ID', '40', '41', ''], people_back
+            # Run again from the download: nobody is added twice, and the
+            # repeated Riya now matches the one just added.
+            back = io.StringIO(newline='')
+            csv.writer(back).writerows(people_back)
+            upload('people-net2.csv', back.getvalue(), 'people-file')
+            wait("document.querySelectorAll('#people-rows tr').length === 7")
+            js("document.getElementById('people-check').click()")
+            wait("document.getElementById('people-notice').textContent.startsWith('Checked: 0 ready')")
+            results = js(f"return {result}")
+            assert results[:2] == ['Already added: user 40.', 'Already added: user 41.'], results
+            assert results[5] == 'Same name as user 40 in Net2.', results
+            assert js(f"return {offered}")[:2] == [False, False]
+            assert js("return document.getElementById('people-create').disabled")
+            assert js('return errors') == []
+
             js("""location.hash = 'batch';
                   const source = document.getElementById('batch-source');
                   source.value = 'net2';
@@ -464,7 +572,7 @@ def main():
             wait("document.getElementById('message').textContent.startsWith('WebHID is not available')")
             assert js("return document.getElementById('connect').disabled")
             assert js('return errors') == []
-            print('Static site smoke test passed: reader, batch upload, sequential taps, duplicate guard, pause, skip/undo, CSV preservation, decimal/hex downloads, Net2 sign-in, portrait upload and conversion, direct card saving, session renewal, expired people, old cards marked lost, card owner lookup, and no WebHID.')
+            print('Static site smoke test passed: reader, batch upload, sequential taps, duplicate guard, pause, skip/undo, CSV preservation, decimal/hex downloads, Net2 sign-in, portrait upload and conversion, direct card saving, adding people with departments, access levels and portraits, same-name people added anyway, column mapping, session renewal, expired people, old cards marked lost, card owner lookup, and no WebHID.')
         finally:
             try:
                 if session:

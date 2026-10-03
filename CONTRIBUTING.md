@@ -27,6 +27,18 @@ Topcoat generates the page on the host; only the reader and DOM controls compile
 to WebAssembly. Re-run the three build commands after editing. `dist` is generated
 and ignored by Git. There is no application server to deploy.
 
+rustfmt does not touch the `view!` templates in `src/app.rs`; Topcoat's own
+formatter does, and CI checks it. Install it at the `topcoat` version in
+`Cargo.lock`:
+
+```sh
+cargo install topcoat-cli --version <the topcoat version in Cargo.lock> --locked
+cargo fmt && topcoat fmt src
+```
+
+Not `topcoat fmt --rustfmt`: in 0.10 it runs rustfmt without the edition, so
+2024 code fails to parse and the files that do parse get 2015 import order.
+
 ## Running the tests
 
 ```sh

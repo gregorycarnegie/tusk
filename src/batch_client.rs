@@ -1,4 +1,4 @@
-//! Browser file handling and controls for the CSV assignment tool.
+//! Browser file handling and controls for the batch assignment tool.
 use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -8,10 +8,17 @@ use web_sys::{
 };
 
 use crate::{
-    batch::{Batch, Format},
-    client::{element, on_click},
+    batch::{Batch, COLUMNS, Format},
+    client::{build_map, element, on_click, read_map},
     reader::{State, Tone, Tool},
+    sheet::Sheet,
 };
+
+thread_local! {
+    /// The chosen sheet and its file name, kept to rebuild the queue when
+    /// its columns are picked again.
+    static SHEET: RefCell<Option<(Sheet, String)>> = const { RefCell::new(None) };
+}
 
 fn input(id: &str) -> HtmlInputElement {
     element(id).unchecked_into()
@@ -29,8 +36,10 @@ pub fn render(state: &State) {
     element("batch-intro").set_hidden(tool != Tool::Batch);
     element("batch-tool").set_hidden(tool != Tool::Batch);
     element("portraits-intro").set_hidden(tool != Tool::Portraits);
+    element("people-intro").set_hidden(tool != Tool::People);
     for (id, tab) in [
         ("reader-tab", Tool::Reader),
+        ("people-tab", Tool::People),
         ("batch-tab", Tool::Batch),
         ("portraits-tab", Tool::Portraits),
     ] {
@@ -43,6 +52,7 @@ pub fn render(state: &State) {
         .value()
         == "net2";
     element("batch-csv").set_hidden(net2_source);
+    element("batch-columns").set_hidden(net2_source || SHEET.with_borrow(Option::is_none));
     element("batch-net2").set_hidden(!net2_source);
     element("batch-retire-option").set_hidden(!net2_source);
     element("batch-format-field").set_hidden(net2_source);
@@ -156,6 +166,7 @@ pub fn setup(state: Rc<RefCell<State>>) {
             state.tool = match hash.as_str() {
                 "#batch" => Tool::Batch,
                 "#portraits" => Tool::Portraits,
+                "#people" => Tool::People,
                 _ => Tool::Reader,
             };
             if state.tool != Tool::Batch
@@ -179,38 +190,42 @@ pub fn setup(state: Rc<RefCell<State>>) {
             return;
         };
         let state = file_state.clone();
-        let replace = input("batch-replace").checked();
-        let format = selected_format();
         input("batch-file").set_disabled(true);
-        input("batch-replace").set_disabled(true);
-        element("batch-format")
-            .unchecked_into::<HtmlSelectElement>()
-            .set_disabled(true);
         // Stop collecting cards as soon as a different file is selected.
         if let Some(batch) = &mut state.borrow_mut().batch {
             batch.running = false;
         }
         spawn_local(async move {
-            let result = if file.size() > 10.0 * 1024.0 * 1024.0 {
-                Err("Please use a CSV smaller than 10 MB.".into())
-            } else {
-                match file.array_buffer().await {
-                    Ok(buffer) => {
-                        Batch::parse(&js_sys::Uint8Array::new(&buffer).to_vec(), replace, format)
-                    }
-                    Err(_) => Err("Could not read that file. Choose it again.".into()),
-                }
-            };
+            let result = read_file(&file, "sheet").await;
             input("batch-file").set_disabled(false);
             input("batch-file").set_value("");
-            input("batch-replace").set_disabled(false);
-            element("batch-format")
-                .unchecked_into::<HtmlSelectElement>()
-                .set_disabled(false);
-            replace_batch(&state, result, file.name());
+            match result {
+                Ok(sheet) => {
+                    let fields = COLUMNS.map(|names| names.iter().map(|n| n.to_string()).collect());
+                    build_map("batch-map", &fields, &sheet.headers);
+                    // Shown open only when a column still needs picking.
+                    let columns = element("batch-columns");
+                    if read_map("batch-map").iter().all(Option::is_some) {
+                        columns.remove_attribute("open").unwrap();
+                    } else {
+                        columns.set_attribute("open", "").unwrap();
+                    }
+                    SHEET.set(Some((sheet, file.name())));
+                    load(&state);
+                }
+                Err(error) => {
+                    state.borrow_mut().batch_error = error;
+                    crate::client::render(&state.borrow());
+                }
+            }
         });
     });
     input("batch-file").set_onchange(Some(callback.as_ref().unchecked_ref()));
+    callback.forget();
+
+    let map_state = state.clone();
+    let callback = Closure::<dyn FnMut()>::new(move || load(&map_state));
+    element("batch-map").set_onchange(Some(callback.as_ref().unchecked_ref()));
     callback.forget();
 
     let source_state = state.clone();
@@ -282,6 +297,33 @@ pub fn setup(state: Rc<RefCell<State>>) {
     callback.forget();
 }
 
+/// A chosen spreadsheet, of at most 10 MB.
+pub async fn read_file(file: &web_sys::File, what: &str) -> Result<Sheet, String> {
+    if file.size() > 10.0 * 1024.0 * 1024.0 {
+        return Err(format!("Please use a {what} smaller than 10 MB."));
+    }
+    match file.array_buffer().await {
+        Ok(buffer) => crate::sheet::read(&file.name(), &js_sys::Uint8Array::new(&buffer).to_vec()),
+        Err(_) => Err("Could not read that file. Choose it again.".into()),
+    }
+}
+
+/// The queue from the chosen sheet and the columns picked for it.
+fn load(state: &RefCell<State>) {
+    let Some((sheet, name)) = SHEET.with_borrow(Clone::clone) else {
+        return;
+    };
+    let map = read_map("batch-map");
+    let columns = [0, 1, 2].map(|field| map.get(field).copied().flatten());
+    let result = Batch::new(
+        sheet,
+        columns,
+        input("batch-replace").checked(),
+        selected_format(),
+    );
+    replace_batch(state, result, name);
+}
+
 /// Swap in newly loaded people, unless that would lose unsaved assignments.
 pub fn replace_batch(state: &RefCell<State>, result: Result<Batch, String>, name: String) {
     let discard = !state.borrow().batch.as_ref().is_some_and(|b| b.dirty)
@@ -319,8 +361,18 @@ fn selected_format() -> Format {
 }
 
 fn download(batch: &Batch, filename: &str) -> Result<(), String> {
-    let bytes = batch.export()?;
-    let parts = js_sys::Array::of1(&js_sys::Uint8Array::from(bytes.as_slice()));
+    save(
+        &batch.export()?,
+        &format!(
+            "{}-cards.csv",
+            filename.rsplit_once('.').map_or(filename, |(base, _)| base)
+        ),
+    )
+}
+
+/// Hand `bytes` to the browser as a CSV download called `name`.
+pub fn save(bytes: &[u8], name: &str) -> Result<(), String> {
+    let parts = js_sys::Array::of1(&js_sys::Uint8Array::from(bytes));
     let options = BlobPropertyBag::new();
     options.set_type("text/csv;charset=utf-8");
     let blob = Blob::new_with_u8_array_sequence_and_options(&parts, &options)
@@ -330,10 +382,7 @@ fn download(batch: &Batch, filename: &str) -> Result<(), String> {
     let document = web_sys::window().unwrap().document().unwrap();
     let anchor: HtmlAnchorElement = document.create_element("a").unwrap().unchecked_into();
     anchor.set_href(&url);
-    anchor.set_download(&format!(
-        "{}-cards.csv",
-        filename.rsplit_once('.').map_or(filename, |(base, _)| base)
-    ));
+    anchor.set_download(name);
     anchor.click();
     // Give the browser time to start the download before releasing its data.
     let release = Closure::once_into_js(move || {

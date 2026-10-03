@@ -58,6 +58,7 @@ impl Tone {
 pub enum Tool {
     #[default]
     Reader,
+    People,
     Batch,
     Portraits,
 }

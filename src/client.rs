@@ -3,7 +3,9 @@ use std::{cell::RefCell, rc::Rc};
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{HidDeviceFilter, HidDeviceRequestOptions, HtmlButtonElement, HtmlElement};
+use web_sys::{
+    HidDeviceFilter, HidDeviceRequestOptions, HtmlButtonElement, HtmlElement, HtmlSelectElement,
+};
 
 use crate::{
     reader::{PAXTON_VID, State, Tone, hid, reason, run},
@@ -64,6 +66,52 @@ pub(crate) fn render(state: &State) {
     crate::batch_client::render(state);
     crate::net2_client::render(state);
     crate::portrait_client::render(state);
+    crate::people_client::render(state);
+}
+
+/// One picker per field in `id`, listing the sheet's columns, each preset to
+/// the column whose heading names the field. `fields[i][0]` is its label.
+pub(crate) fn build_map(id: &str, fields: &[Vec<String>], headers: &[String]) {
+    let document = web_sys::window().unwrap().document().unwrap();
+    let make = |tag: &str, text: &str| {
+        let node = document.create_element(tag).unwrap();
+        node.set_text_content(Some(text));
+        node
+    };
+    let container = element(id);
+    container.set_text_content(None);
+    for names in fields {
+        let label = make("label", "");
+        label.append_child(&make("span", &names[0])).unwrap();
+        let select: HtmlSelectElement = make("select", "").unchecked_into();
+        let unused = make("option", "Not used");
+        unused.set_attribute("value", "").unwrap();
+        select.append_child(&unused).unwrap();
+        for index in 0..headers.len() {
+            let option = make("option", &crate::sheet::column_name(headers, index));
+            option.set_attribute("value", &index.to_string()).unwrap();
+            select.append_child(&option).unwrap();
+        }
+        let guess = crate::sheet::guess(headers, names);
+        select.set_value(&guess.map_or(String::new(), |index| index.to_string()));
+        label.append_child(&select).unwrap();
+        container.append_child(&label).unwrap();
+    }
+}
+
+/// The column picked for each field in `id`, in `build_map`'s order.
+pub(crate) fn read_map(id: &str) -> Vec<Option<usize>> {
+    let selects = element(id).get_elements_by_tag_name("select");
+    (0..selects.length())
+        .filter_map(|index| selects.item(index))
+        .map(|select| {
+            select
+                .unchecked_into::<HtmlSelectElement>()
+                .value()
+                .parse()
+                .ok()
+        })
+        .collect()
 }
 
 pub(crate) fn on_click(id: &str, f: impl FnMut() + 'static) {
@@ -83,6 +131,7 @@ pub fn start() {
     }));
     crate::net2_client::setup(state.clone());
     crate::portrait_client::setup(state.clone());
+    crate::people_client::setup(state.clone());
     crate::batch_client::setup(state.clone());
     render(&state.borrow());
     on_click("theme", toggle_theme);

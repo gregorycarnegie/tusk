@@ -15,7 +15,7 @@ use crate::{
     client::{element, on_click},
     net2::{
         Failure, UNCERTAIN_WRITE, access_token, describe_owners, failure, lost_tokens, owner_query,
-        parse_origin, read_cards, read_departments, read_users, refresh_token, sign_in_failure,
+        parse_origin, read_cards, read_named, read_users, refresh_token, sign_in_failure,
         status_failure,
     },
     reader::{Session, State, Tone, Tool},
@@ -198,7 +198,12 @@ pub fn render(state: &State) {
     problem.set_hidden(*tone != Tone::Problem);
     problem.set_text_content(Some(message));
     element("net2-form").set_hidden(connected);
-    for id in ["net2-open", "owner-connect", "batch-signin"] {
+    for id in [
+        "net2-open",
+        "owner-connect",
+        "batch-signin",
+        "people-signin",
+    ] {
         element(id).set_hidden(connected);
     }
     element("net2-disconnect").set_hidden(!connected);
@@ -414,7 +419,7 @@ async fn connect(state: Rc<RefCell<State>>) {
         let list = element("batch-department");
         list.set_inner_html("<option value=\"\">All users</option>");
         let document = web_sys::window().unwrap().document().unwrap();
-        for (id, name) in read_departments(&reply) {
+        for (id, name) in read_named(&reply) {
             let option = document.create_element("option").unwrap();
             option.set_attribute("value", &id.to_string()).unwrap();
             option.set_text_content(Some(&name));

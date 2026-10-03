@@ -28,6 +28,17 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
+      # rustfmt leaves view! bodies alone; Topcoat's formatter, at the version
+      # of topcoat in Cargo.lock, so its rules move with the library.
+      - id: topcoat
+        run: |
+          version=$(cargo metadata --format-version 1 --locked |
+            jq -r '.packages[] | select(.name == "topcoat") | .version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: topcoat-cli@${{ steps.topcoat.outputs.version }}
+      - run: topcoat fmt --check src
       # The host is the default target (.cargo/config.toml), so this lints the
       # host tests, and name wasm32 to lint what actually ships.
       - run: cargo clippy --all-targets -- -D warnings
