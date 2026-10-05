@@ -72,7 +72,7 @@ any polling, and a replug resets the reader back to needing it.
 
     addr  op    payload   wire bytes
     0x08  0x25            02 05 08 25 CB      RWD_OPEN_LINK, plaintext address
-    0x88  0x14            02 05 88 51 1F      TOKEN_R_DATA (a Hitag2 read)
+    0x88  0x14            02 05 88 51 1F      TOKEN_R_DATA (a 125 kHz read)
     0xCD  0x28            02 05 CD 49 E2      RWD_SERIAL_NUMBER
     0x88  0x24  0x0A      02 06 88 61 66 A8   RWD_LEDS
     0x88  0x00            02 05 88 45 2B      unknown
@@ -92,58 +92,33 @@ byte, a read with 32. Net2 sets the LEDs to 0x06 instead after a token is
 found. Each read command asks for one card technology, and Net2 cycles through
 five of them, moving on when a read does not come back as an ack:
 
-    0x14  TOKEN_R_DATA       Hitag2 pages (Paxton's own fobs)
+    0x14  TOKEN_R_DATA       Hitag2 pages (Paxton's own 125 kHz fobs)
     0xC7  RWD_READ_EM4100
     0xD7  RWD_READ_MIFARE
     0xA8  RWD_READ_HITAG_1
     0xD8  RWD_READ_HID
 
-Tusk reads Mifare and, in beta, Hitag2.
+Tusk reads Mifare only. It sends `TOKEN_R_DATA` once, in the handshake, because
+Net2 does, and ignores its answer.
 
 ### Mifare
 
 With a card present the reply is an ack whose payload is the UID followed by
 zero padding. With no card it is not an ack at all: it is type `0x12` with the
-single byte `01`. (A Hitag2 read with no fob gets `0x12 28`.) This document
+single byte `01`. (`TOKEN_R_DATA` with no fob gets `0x12 28`.) This document
 used to say an all-zero ack meant no card; net2.pcap and the live reader both
 show `0x12 01`, in 47 of 47 empty reads.
 
-Replies are in order but slow. An empty Mifare read is answered after the next
-read has already been sent, so a reply must be credited to the oldest read still
-waiting, not the latest one. Crediting the latest kept a lifted card on screen
-for ever. `0x12 01` and `0x12 28` name their read, which also resyncs the queue.
+Replies are in order but slow: an empty Mifare read is answered after the next
+read has already been sent. With several kinds of read in turn, a reply must be
+credited to the oldest read still waiting, not the latest one; `0x12 01` and
+`0x12 28` name their read. Tusk only polls Mifare, so only `0x12 01` clears a
+card.
 Net2's token number is the first four bytes as a big-endian integer, keeping
 the last eight decimal digits:
 
     0225 a5 71 35090555 657068616e74456c...   ->  UID 5B7D4039
     0x5B7D4039 = 1534935097  ->  mod 10^8  ->  34935097, as Net2 shows it
-
-### Hitag2 (beta)
-
-Implemented from Net2's decoder but not yet tested on a real fob, so the reply
-layout is inferred from that code rather than observed. The payload holds
-pages 2 to 7, four bytes each, big-endian, so page n starts at byte 4(n-2).
-
-Digits are 5-bit codes, most significant bit first. The table is Net2's; it is
-mostly an odd-parity bit plus the value, except 14:
-
-    0 10000   4 00100   8 01000   12 11100
-    1 00001   5 10101   9 11001   13 01101  end
-    2 00010   6 10110  10 11010   14 11110
-    3 10011   7 00111  11 01011   15 11111  end
-
-Bits 26-29 of page 7 pick the layout:
-
-- `0100`, Net2: digits from bit 0 of pages 4+5 as one 64-bit string, six from
-  page 4, then from bit 32 (page 5) on, until an end code. A leading run of
-  `00000` counts as zeros. Keep the last eight digits.
-- `0001`, newer: three digits at (page, bit) (6,25) (7,5) (7,15) give a card
-  type. Type 1, a user card, has its number at (5,10) (5,20) (6,0) (6,10)
-  (4,5) (4,15) (4,25) (5,5). Any other type uses the Net2 layout over only the
-  first 45 bits.
-
-Net2 also rewrites some old-layout fobs when it sees them (RevertTokenToModeOne).
-Tusk never writes to a token, so that is left out.
 
 ## Command map
 
@@ -177,7 +152,6 @@ and re-enumerate on the USB bus; 0x26 being RWD_RESET explains it.
 
 ## Still unknown
 
-Whether the Hitag2 reply really has the layout Net2's code implies - it needs
-a Paxton fob. Not investigated: what 0x00 does, the longer status structures
+Not investigated: what 0x00 does, the longer status structures
 (0x61 returns 01 00 00 FF FF FF 08 ... 05 90 04), and whether the address
 means anything beyond picking the key phase.

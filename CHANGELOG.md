@@ -20,9 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first name and surname Net2 or an earlier row already has is held back too,
   with an **Add anyway** tick for when it really is a different person. The
   download is the sheet with each new User ID filled in, so running it again
-  adds nobody twice. Tested against the stand-in Net2 only: `POST /users`,
-  the department and door permission `PUT`s, and the expiry time (end of the
-  day, 23:59) are not yet checked on a real Net2.
+  adds nobody twice. Checked on a real Net2 with one person: `POST /users`,
+  the department and access level `PUT`s, and the portrait upload. The
+  expiry time (end of the day, 23:59) is not yet checked on a real Net2.
 - Spreadsheets as well as CSV: Batch assign and Add people read tab-separated
   text and the first sheet of an Excel (xlsx, xlsm, xlsb, xls) or
   OpenDocument (ods) workbook, with [calamine](https://crates.io/crates/calamine).
@@ -38,8 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is one fixed query through Net2's `customquery/querydb`, joining `sdk.Cards`
   to `sdk.UsersEx`, with only the card number put into it. The idea of
   querying Net2's own views comes from greboid/net2 and the HelloID
-  connector. The columns and the query's reply were checked on a real Net2;
-  the reader side is tested against the stand-in Net2 only.
+  connector. Checked on a real Net2 with real cards.
 
 ### Changed
 
@@ -59,6 +58,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `N'…'` with quotes doubled, names in brackets, booleans as 1 and 0. Ready
   for queries that match on text, such as personnel numbers. The WebAssembly
   module grows by about 170 KB.
+
+### Removed
+
+- Hitag2 support. The beta decoding of Paxton's Hitag2 fobs is gone, and the
+  reader now polls for Mifare only instead of alternating with
+  `TOKEN_R_DATA` (`0x14`). Hitag2 is a legacy 125 kHz technology, the USB
+  desktop reader never returned a fob from it, and it was never tested. The
+  handshake still sends `TOKEN_R_DATA` once, exactly as Net2 does, and
+  ignores the answer.
 
 ## [0.5.0-beta.1] - 2026-10-02
 

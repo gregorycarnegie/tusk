@@ -370,7 +370,6 @@ fn same_number(left: &str, right: &str, format: Format) -> bool {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use crate::token::Read;
 
     /// A queue from a file, its columns found by their headings.
     fn parse(bytes: &[u8], replace: bool, format: Format) -> Result<Batch, String> {
@@ -384,7 +383,6 @@ mod tests {
         let input = "\u{feff}Surname,First name,Card Number,Notes\r\nDoe,John,,\"Comma, quote \"\" and\nnewline\"\r\nDawkins,Jane,,,\r\nKept,Student,0034935098,unchanged\r\n";
         let mut batch = parse(input.as_bytes(), false, Format::Decimal).unwrap();
         let card = Token {
-            read: Read::Mifare,
             hex: "5B7D4039".into(),
             number: 34935097,
         };
@@ -466,7 +464,6 @@ mod tests {
         let mut batch = Batch::from_users(&users, false, TODAY).unwrap();
         assert_eq!(batch.name(1), "(No name)");
         let mut card = Token {
-            read: Read::Mifare,
             hex: "5B7D4039".into(),
             number: 34935097,
         };
@@ -500,7 +497,6 @@ mod tests {
 
     fn card(n: u32) -> Token {
         Token {
-            read: Read::Mifare,
             hex: format!("{n:08X}"),
             number: n,
         }

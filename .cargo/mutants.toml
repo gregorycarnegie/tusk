@@ -19,13 +19,9 @@ exclude_globs = [
     "src/main.rs",
 ]
 
-# Known equivalent survivors (September 2026, 280 caught / 5 missed / 1 timeout).
+# Known equivalent survivors (September 2026, before Hitag2 decoding was removed).
 # Left in the run rather than excluded, since line numbers move:
 #   frame     mask(.., buf[3..len - 1]) -> len / 1: the extra byte masked is
 #             the checksum slot, which the next line overwrites
 #   frame     checksum(&buf[..len - 1]) -> len + 1 / len / 1: the extra bytes
 #             summed are always still zero
-#   hitag2_number  page4 << 32 | page5 -> ^: the halves share no bits
-#   net2_number    i < len - 5 -> <=: i steps 0..25 then 32, 37, ... and never
-#                  lands on 59 or 40
-# The timeout (digits.len() == 6 -> !=) loops forever, so it is detected.

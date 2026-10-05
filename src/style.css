@@ -237,7 +237,6 @@
       letter-spacing: .08em; text-transform: uppercase;
       background: rgb(58 120 18 / .1); color: #2F6410; border: 1px solid rgb(58 120 18 / .3);
     }
-    .chip.beta { background: rgb(154 95 6 / .1); color: #7A4B05; border-color: rgb(154 95 6 / .35); }
 
     .reading.empty .credential { filter: saturate(.4); }
     .reading.empty .number { color: rgb(24 36 15 / .16); }
@@ -257,8 +256,6 @@
     body:has(#status[data-tone="ready"]) .reading.empty .scan { opacity: 1; animation: sweep 2.8s ease-in-out infinite; }
     @keyframes sweep { 0% { transform: translateY(-100%); } 60%, 100% { transform: translateY(100%); } }
 
-    .beta-note { display: none; margin: 0; max-width: 27rem; font-size: .86rem; text-align: center; color: var(--busy); }
-    .beta-note.shown { display: block; }
 
     .side { display: grid; gap: 16px; align-content: start; }
     .pane { padding: 18px 20px; display: grid; gap: 10px; }
