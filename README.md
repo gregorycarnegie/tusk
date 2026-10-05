@@ -178,9 +178,10 @@ person, puts them in their department, gives them their access levels and
 uploads their portrait, converted to a JPG when needed as for portraits.
 **Download with User IDs** saves the sheet with each new person's User ID
 filled in; load that file again and nobody is added twice. Then give out cards with **People already in
-Net2** under **Batch assign cards**. Adding people has only been tested
-against a stand-in for Net2 so far, so check the first few in Net2, including
-their expiry date, department and access levels.
+Net2** under **Batch assign cards**. Adding people is tested on a real Net2:
+the person, their department, access level and portrait all arrived. Expiry
+dates have only been tested against a stand-in for Net2 so far, so check the
+first few in Net2 if you set them.
 
 **Card holder.** Once signed in, every card you tap on **Read a card** shows
 who holds it in Net2, with their user ID and
