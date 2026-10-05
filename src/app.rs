@@ -197,9 +197,6 @@ fn page(cx: &Cx) -> impl View {
                                 </div>
                                 <span class="scan" aria-hidden="true"></span>
                             </div>
-                            <p id="beta" class="beta-note">
-                                "Hitag2 decoding is untested on real fobs. Check this number against Net2 before relying on it."
-                            </p>
                         </div>
                         <aside class="side">
                             <section class="pane panel">
@@ -397,7 +394,7 @@ async fn batch_tool() -> topcoat::Result<impl View> {
                             </button>
                         </div>
                         <p class="hint">
-                            "One card per person. Leave each card on the reader until its assignment appears; duplicates are refused. Hitag2 fobs are beta: check their numbers against Net2."
+                            "One card per person. Leave each card on the reader until its assignment appears; duplicates are refused."
                         </p>
                     </div>
                     <div class="review panel">

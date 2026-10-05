@@ -2,7 +2,6 @@
 
 use std::{
     cell::{Cell, RefCell},
-    collections::VecDeque,
     rc::Rc,
 };
 use wasm_bindgen::prelude::*;
@@ -11,10 +10,10 @@ use web_sys::{HidDevice, HidInputReportEvent};
 use crate::{
     batch::Batch,
     protocol::{
-        ACK, ADDR, INIT, LEDS_ARG, NO_HITAG2, NO_MIFARE, NO_TOKEN, OP_LEDS, REPORT_BYTES, Reply,
+        ACK, ADDR, INIT, LEDS_ARG, NO_MIFARE, NO_TOKEN, OP_LEDS, OP_READ_MIFARE, REPORT_BYTES,
         frame, is_read_reply, parse,
     },
-    token::{Read, Token, token},
+    token::{Token, token},
 };
 
 /// Paxton Net2 desktop reader: USB\VID_1071&PID_0001, HID vendor-defined.
@@ -169,44 +168,11 @@ async fn send(dev: &HidDevice, mut buf: [u8; REPORT_BYTES]) -> Result<(), JsValu
     js_sys::Promise::race(&racers).await.map(|_| ())
 }
 
-/// Reads sent and not yet answered, oldest first. The reader answers in order
-/// but not promptly: an empty Mifare read is typically answered after the next
-/// read has gone out, so "the last read sent" is the wrong one to credit.
-type Pending = RefCell<VecDeque<Read>>;
-
-/// Ask the reader for one kind of token. The answer to the read arrives
-/// separately, as an input report, so queue which read it will be answering.
-async fn poll_once(dev: &HidDevice, read: Read, pending: &Pending) -> Result<(), JsValue> {
+/// Ask the reader for a Mifare card. The answer arrives separately, as an
+/// input report.
+async fn poll_once(dev: &HidDevice) -> Result<(), JsValue> {
     send(dev, frame(ADDR, OP_LEDS, &[LEDS_ARG])).await?;
-    {
-        let mut pending = pending.borrow_mut();
-        // a reply that never came must not shift every later one for good
-        if pending.len() >= 4 {
-            pending.pop_front();
-        }
-        pending.push_back(read);
-    }
-    send(dev, frame(ADDR, read.opcode(), &[])).await
-}
-
-/// Which read a reply answers. The reader's "nothing there" replies name the
-/// read (seen live and in net2.pcap), which also resyncs the queue if a reply
-/// went missing; a token's own reply is credited to the oldest read waiting.
-/// Anything else, like the 12 3C answering the handshake, answers no read.
-fn answered(reply: &Reply, pending: &Pending) -> Option<Read> {
-    let mut pending = pending.borrow_mut();
-    let named = match (reply.msg_type, reply.payload.as_slice()) {
-        (NO_TOKEN, [NO_MIFARE]) => Read::Mifare,
-        (NO_TOKEN, [NO_HITAG2]) => Read::Hitag2,
-        _ if is_read_reply(reply) => return pending.pop_front(),
-        _ => return None,
-    };
-    while let Some(read) = pending.pop_front() {
-        if read == named {
-            break;
-        }
-    }
-    Some(named)
+    send(dev, frame(ADDR, OP_READ_MIFARE, &[])).await
 }
 
 /// Who has the reader. A connection is told apart by its session rather than
@@ -261,11 +227,9 @@ pub async fn run(dev: HidDevice, state: Rc<RefCell<State>>) {
     }
     state.borrow_mut().link.opening = false;
 
-    let pending: Rc<Pending> = Rc::default();
     let misses = Rc::new(Cell::new(0u32));
     let listener = dev.clone();
-    let (callback_state, callback_pending, callback_misses) =
-        (state.clone(), pending.clone(), misses.clone());
+    let (callback_state, callback_misses) = (state.clone(), misses.clone());
     let cb = Closure::<dyn FnMut(HidInputReportEvent)>::new(move |ev: HidInputReportEvent| {
         // keep `listener` alive: Chrome stops delivering reports once the
         // HIDDevice wrapper is garbage collected
@@ -286,15 +250,13 @@ pub async fn run(dev: HidDevice, state: Rc<RefCell<State>>) {
         if state.status.1 != READY {
             state.say(Tone::Ready, READY);
         }
-        let Some(read) = answered(&reply, &callback_pending) else {
-            return;
-        };
-        match token(read, &reply) {
-            Some(t) => state.show(Some(t)),
-            // nothing of this kind on the reader, so only a token this kind
-            // of read found can have been lifted off
-            None if state.card.as_ref().is_some_and(|t| t.read == read) => state.show(None),
-            None => {}
+        // The reader's "no card" names the read it answers, and only a
+        // Mifare one means the card was lifted off. Anything else, like the
+        // 12 3C and 12 28 answering the handshake, says nothing about it.
+        if (reply.msg_type, reply.payload.as_slice()) == (NO_TOKEN, &[NO_MIFARE][..]) {
+            state.show(None);
+        } else if is_read_reply(&reply) {
+            state.show(token(&reply));
         }
     });
     dev.set_oninputreport(Some(cb.as_ref().unchecked_ref()));
@@ -306,10 +268,6 @@ pub async fn run(dev: HidDevice, state: Rc<RefCell<State>>) {
     };
 
     for (addr, opcode, args) in INIT {
-        // the handshake includes a Hitag2 read, which is answered like any other
-        if opcode == Read::Hitag2.opcode() {
-            pending.borrow_mut().push_back(Read::Hitag2);
-        }
         if let Err(e) = send(&dev, frame(addr, opcode, args)).await {
             if owned() {
                 release();
@@ -328,12 +286,7 @@ pub async fn run(dev: HidDevice, state: Rc<RefCell<State>>) {
         sleep(40).await;
     }
 
-    let mut reads = [Read::Mifare, Read::Hitag2].into_iter().cycle();
-    while owned()
-        && poll_once(&dev, reads.next().unwrap(), &pending)
-            .await
-            .is_ok()
-    {
+    while owned() && poll_once(&dev).await.is_ok() {
         sleep(POLL_MS).await;
         // the reply lands during the sleep and resets this
         if !owned() {
@@ -373,7 +326,7 @@ mod tests {
     use wasm_bindgen_test::*;
 
     use super::*;
-    use crate::protocol::{OP_READ_HITAG2, OP_READ_MIFARE, REAL_TOKEN_READ};
+    use crate::protocol::REAL_TOKEN_READ;
 
     wasm_bindgen_test_configure!(run_in_browser);
 
@@ -455,9 +408,9 @@ mod tests {
                         OP_READ_MIFARE if on.get() => REAL_TOKEN_READ.to_vec(),
                         // No token: not an ack at all but type 0x12 with one
                         // byte, as net2.pcap shows for 47 empty Mifare reads
-                        // (01) and 67 empty Hitag2 reads (28).
+                        // (01) and 67 empty TOKEN_R_DATA reads (28).
                         OP_READ_MIFARE => frame(ADDR, NO_TOKEN, &[NO_MIFARE]).to_vec(),
-                        OP_READ_HITAG2 => frame(ADDR, NO_TOKEN, &[NO_HITAG2]).to_vec(),
+                        0x14 => frame(ADDR, NO_TOKEN, &[0x28]).to_vec(),
                         _ => frame(ADDR, ACK, &[0]).to_vec(),
                     })
                 });
@@ -526,17 +479,19 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
-    async fn sends_the_handshake_then_polls_for_mifare_first() {
+    async fn sends_the_handshake_then_polls_for_mifare_only() {
         let (page, reader) = (Page::new(), Fake::new(0));
         page.connect(&reader);
-        assert!(until(2000, || reader.sent().len() >= INIT.len() + 2).await);
+        assert!(until(2000, || reader.sent().len() >= INIT.len() + 4).await);
+        let poll = [
+            frame(ADDR, OP_LEDS, &[LEDS_ARG]).to_vec(),
+            frame(ADDR, OP_READ_MIFARE, &[]).to_vec(),
+        ];
         let expected: Vec<Vec<u8>> = INIT
             .iter()
             .map(|(addr, op, args)| frame(*addr, *op, args).to_vec())
-            .chain([
-                frame(ADDR, OP_LEDS, &[LEDS_ARG]).to_vec(),
-                frame(ADDR, OP_READ_MIFARE, &[]).to_vec(),
-            ])
+            .chain(poll.clone())
+            .chain(poll)
             .collect();
         assert_eq!(reader.sent()[..expected.len()], expected[..]);
     }
@@ -548,19 +503,6 @@ mod tests {
         page.connect(&reader);
         assert!(until(2000, || page.number() == Some(CARD)).await);
         assert_eq!(page.message(), READY);
-    }
-
-    #[wasm_bindgen_test]
-    async fn keeps_a_mifare_card_through_the_hitag2_polls() {
-        let (page, reader) = (Page::new(), Fake::new(0));
-        reader.card.set(true);
-        page.connect(&reader);
-        assert!(until(2000, || page.number() == Some(CARD)).await);
-        // about six polls, half of them Hitag2 reads that find nothing
-        for _ in 0..150 {
-            assert_eq!(page.number(), Some(CARD));
-            sleep(10).await;
-        }
     }
 
     #[wasm_bindgen_test]
@@ -589,8 +531,7 @@ mod tests {
     }
 
     /// What the real reader did: with the card gone, its "no Mifare card"
-    /// always arrived during the following Hitag2 read, so crediting the last
-    /// read sent never cleared the card.
+    /// arrived after the next read had already gone out.
     #[wasm_bindgen_test]
     async fn clears_the_card_when_no_card_is_answered_late() {
         let (page, reader) = (Page::new(), Fake::new(0));

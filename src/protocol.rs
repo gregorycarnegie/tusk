@@ -14,9 +14,6 @@ pub const LEDS_ARG: u8 = 0x0A;
 /// RWD_READ_MIFARE: answers with the card's UID, then zero padding.
 pub const OP_READ_MIFARE: u8 = 0xD7;
 
-/// TOKEN_R_DATA: answers with Hitag2 pages 2 to 7, four bytes each.
-pub const OP_READ_HITAG2: u8 = 0x14;
-
 /// With the high bit set in the address, everything from the type byte onwards
 /// is XORed with this repeating key, starting at key index (address mod 8).
 /// Zero padding XORs to the key itself, which is why "Elephant" shows up as
@@ -26,21 +23,23 @@ const OBFUSCATION_KEY: [u8; 8] = *b"Elephant";
 /// Decoded reply type: the reader understood and answered.
 pub const ACK: u8 = 0x10;
 
-/// A read found nothing; the one payload byte says which kind of read.
-/// Net2's reads for 125 kHz tokens share 0x28.
+/// A read found nothing; the one payload byte says which kind of read. Only
+/// Mifare's matters here: the 0x28 that answers the handshake's TOKEN_R_DATA
+/// is for 125 kHz tokens, which this app does not read.
 pub const NO_TOKEN: u8 = 0x12;
 pub const NO_MIFARE: u8 = 0x01;
-pub const NO_HITAG2: u8 = 0x28;
 
 /// "I did not understand", echoing our own bytes back. Sent unobfuscated even
 /// when the address asks for obfuscation, so it is read straight off the wire.
 const NAK: u8 = 0x13;
 
 /// What Net2 sends once before it starts polling. Without it the reader
-/// refuses the read, which is what a replug leaves us with.
+/// refuses the read, which is what a replug leaves us with. It is sent
+/// exactly as captured, 125 kHz read and all, since which part wakes the
+/// reader is unknown.
 pub const INIT: [(u8, u8, &[u8]); 5] = [
     (0x08, 0x25, &[]),            // RWD_OPEN_LINK
-    (0x88, OP_READ_HITAG2, &[]),  // TOKEN_R_DATA
+    (0x88, 0x14, &[]),            // TOKEN_R_DATA
     (0xCD, 0x28, &[]),            // RWD_SERIAL_NUMBER
     (ADDR, OP_LEDS, &[LEDS_ARG]), // RWD_LEDS
     (ADDR, 0x00, &[]),

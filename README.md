@@ -18,9 +18,8 @@ See [Working with Net2 directly](#working-with-net2-directly).
 **Try it: <https://gregorycarnegie.github.io/tusk/>** — in Chrome or Edge,
 with the reader plugged in. Nothing to install.
 
-Mifare cards are tested. Paxton's own Hitag2 fobs are **beta**: decoded the
-way Net2 does, but not yet tried on a real fob, so check the number against
-Net2 before relying on it.
+Tusk reads Mifare cards. Legacy 125 kHz tokens such as Paxton's Hitag2 fobs
+are not supported.
 
 ![Read a card: the token number on a drawn MIFARE card, and who holds it in Net2](snapshots/read-a-card.png)
 
@@ -112,7 +111,6 @@ empty card numbers. The tool accepts up to 10 MB and 10,000 people per file.
 Processing stays in the browser. The batch pauses on reader problems or when
 switching back to **Read a card**. Unsaved work triggers a leave-page warning;
 there is no persistent storage, so download regularly before closing the tab.
-Hitag2 decoding remains beta and should be checked against Net2 on real fobs.
 
 ## Working with Net2 directly
 
@@ -289,7 +287,7 @@ Messages are framed, checksummed, and XOR-obfuscated with a repeating key:
 ```
 
 The app runs a five-message handshake on connect, then polls four times a
-second, alternating Mifare and Hitag2 reads. Without the handshake the reader
+second, with Mifare reads. Without the handshake the reader
 ignores reads, which is what makes a freshly plugged-in device look broken.
 
 Full details — framing, checksum, the key, the address rules, the command map

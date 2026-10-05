@@ -7,10 +7,7 @@ use web_sys::{
     HidDeviceFilter, HidDeviceRequestOptions, HtmlButtonElement, HtmlElement, HtmlSelectElement,
 };
 
-use crate::{
-    reader::{PAXTON_VID, State, Tone, hid, reason, run},
-    token::Read,
-};
+use crate::reader::{PAXTON_VID, State, Tone, hid, reason, run};
 
 pub(crate) fn element(id: &str) -> HtmlElement {
     web_sys::window()
@@ -30,7 +27,6 @@ pub(crate) fn render(state: &State) {
     // Ready means a reader is connected and answering; nothing to connect.
     element("connect").set_hidden(state.status.0 == Tone::Ready);
     let card = state.card.as_ref();
-    let beta = card.is_some_and(|t| t.read == Read::Hitag2);
     element("reading").set_class_name(if card.is_some() {
         "reading"
     } else {
@@ -41,11 +37,9 @@ pub(crate) fn render(state: &State) {
     ));
     element("prompt").set_hidden(card.is_some());
     element("kind").set_hidden(card.is_none());
-    element("kind").set_class_name(if beta { "chip beta" } else { "chip" });
-    element("kind").set_text_content(Some(if beta { "Hitag2 · beta" } else { "Mifare" }));
+    element("kind").set_text_content(Some("Mifare"));
     element("hex").set_hidden(card.is_none());
     element("hex").set_text_content(card.map(|t| t.hex.as_str()));
-    element("beta").set_class_name(if beta { "beta-note shown" } else { "beta-note" });
     for (id, text) in [
         ("copy-number", card.map(|t| t.number.to_string())),
         ("copy-hex", card.map(|t| t.hex.clone())),

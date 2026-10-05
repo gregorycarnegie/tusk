@@ -60,6 +60,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for queries that match on text, such as personnel numbers. The WebAssembly
   module grows by about 170 KB.
 
+### Removed
+
+- Hitag2 support. The beta decoding of Paxton's Hitag2 fobs is gone, and the
+  reader now polls for Mifare only instead of alternating with
+  `TOKEN_R_DATA` (`0x14`). Hitag2 is a legacy 125 kHz technology, the USB
+  desktop reader never returned a fob from it, and it was never tested. The
+  handshake still sends `TOKEN_R_DATA` once, exactly as Net2 does, and
+  ignores the answer.
+
 ## [0.5.0-beta.1] - 2026-10-02
 
 A beta: the new Net2 features below are partly tested on a real Net2, as
