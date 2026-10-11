@@ -138,6 +138,7 @@ pub const REAL_TOKEN_READ: [u8; 37] = [
 mod tests {
     use super::*;
     use proptest::prelude::*;
+    use rstest::rstest;
 
     const REAL_VERSION: [u8; 18] = [
         0x02, 0x12, 0x88, 0x55, 0x39, 0x36, 0x32, 0x48, 0x31, 0x2B, 0x27, 0x65, 0x3A, 0x54, 0x5E,
@@ -170,10 +171,18 @@ mod tests {
         assert_eq!(reply.msg_type, NAK);
     }
 
-    #[test]
-    fn builds_the_two_frames_net2_sends_for_a_read() {
-        assert_eq!(hex(&frame(ADDR, OP_LEDS, &[LEDS_ARG])[..6]), "0206886166A8");
-        assert_eq!(hex(&frame(ADDR, OP_READ_MIFARE, &[])[..5]), "02058892DE");
+    #[rstest]
+    #[case::leds(OP_LEDS, &[LEDS_ARG], "0206886166A8")]
+    #[case::read_mifare(OP_READ_MIFARE, &[], "02058892DE")]
+    fn builds_the_two_frames_net2_sends_for_a_read(
+        #[case] opcode: u8,
+        #[case] payload: &[u8],
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            hex(&frame(ADDR, opcode, payload)[..expected.len() / 2]),
+            expected
+        );
     }
 
     #[test]

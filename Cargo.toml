@@ -2,7 +2,7 @@
 name = "tusk"
 version = "0.5.0-beta.1"
 edition = "2024"
-rust-version = "1.98"
+rust-version = "1.99"
 license = "MIT"
 description = "Read Paxton Net2 tokens in the browser over WebHID, and send cards and portraits to Net2"
 repository = "https://github.com/gregorycarnegie/tusk"
@@ -19,7 +19,7 @@ csv = "1.4.0"
 # Excel and OpenDocument sheets, read in the browser.
 calamine = "0.36.1"
 # Net2 Local API JSON, and portrait dimensions checked before upload.
-serde_json = "1.0.151"
+serde_json = "1.0.152"
 imagesize = "0.15.0"
 sea-query = { version = "1.0.2", default-features = false }
 
@@ -76,10 +76,11 @@ web-sys = { version = "0.3.106", features = [
 
 # Host tests: `cargo test`. proptest does not build for wasm32.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+rstest = { version = "0.27.0", default-features = false }
 # round-trip property testing for the frame codec
-proptest = "1.11.0"
+proptest = "1.12.0"
 # builds the xlsx the sheet tests read
-zip = { version = "8.6", default-features = false }
+zip = { version = "9.0.1", default-features = false }
 
 # Browser tests: `cargo w`, run in headless Chrome by
 # wasm-bindgen-test-runner (.cargo/config.toml), against a fake reader.

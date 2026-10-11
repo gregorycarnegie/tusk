@@ -456,6 +456,7 @@ pub fn duplicate_flags(ids: &[Option<i32>]) -> Vec<bool> {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     /// Smallest header `imagesize` can read: a 1x1 PNG.
     fn tiny_png() -> Vec<u8> {
@@ -477,21 +478,15 @@ mod tests {
         jpeg(1, 1)
     }
 
-    #[test]
-    fn origins_are_bare_https() {
-        assert_eq!(
-            parse_origin(" https://Net2:8443/ ").as_deref(),
-            Ok("https://net2:8443")
-        );
-        for bad in [
-            "http://net2:8443",
-            "https://net2:8443/api/v1",
-            "https://user@net2",
-            "https://",
-            "net2:8443",
-        ] {
-            assert!(parse_origin(bad).is_err(), "{bad}");
-        }
+    #[rstest]
+    #[case::bare_https(" https://Net2:8443/ ", Some("https://net2:8443"))]
+    #[case::http("http://net2:8443", None)]
+    #[case::path("https://net2:8443/api/v1", None)]
+    #[case::credentials("https://user@net2", None)]
+    #[case::no_host("https://", None)]
+    #[case::no_scheme("net2:8443", None)]
+    fn origins_are_bare_https(#[case] input: &str, #[case] expected: Option<&str>) {
+        assert_eq!(parse_origin(input).ok().as_deref(), expected);
     }
 
     #[test]
@@ -564,17 +559,6 @@ mod tests {
             .as_deref(),
             Some("2026-10-01")
         );
-        for date in [
-            "null",
-            "\"0001-01-01T00:00:00\"",
-            "\"01/10/2026\"",
-            "\"2026\"",
-            "7",
-        ] {
-            let user = read_user(&format!("{user}{date}}}"), 1).unwrap();
-            assert_eq!(user.expires, None, "{date}");
-            assert!(!user.expired("2026-10-02"), "{date}");
-        }
         assert_eq!(expires(r#"{"id":1,"hasImage":false}"#), None);
         let on = |date: &str| User {
             expires: Some(date.into()),
@@ -586,6 +570,22 @@ mod tests {
             "the last day still counts"
         );
         assert!(!on("2027-01-01").expired("2026-10-02"));
+    }
+
+    #[rstest]
+    #[case::null("null")]
+    #[case::sentinel("\"0001-01-01T00:00:00\"")]
+    #[case::non_iso("\"01/10/2026\"")]
+    #[case::incomplete("\"2026\"")]
+    #[case::number("7")]
+    fn an_unusable_expiry_date_does_not_expire_the_user(#[case] date: &str) {
+        let user = read_user(
+            &format!(r#"{{"id":1,"hasImage":false,"expiryDate":{date}}}"#),
+            1,
+        )
+        .unwrap();
+        assert_eq!(user.expires, None);
+        assert!(!user.expired("2026-10-02"));
     }
 
     #[test]
@@ -690,38 +690,36 @@ mod tests {
         assert_eq!(read_custom_fields("[]")[13].name, "Personnel number");
     }
 
-    #[test]
-    fn a_refresh_token_is_kept_only_when_net2_grants_one() {
-        assert_eq!(
-            refresh_token(r#"{"access_token":"a","refresh_token":"r 1"}"#).as_deref(),
-            Some("r 1")
-        );
-        for none in [
-            r#"{"access_token":"a"}"#,
-            r#"{"refresh_token":""}"#,
-            r#"{"refresh_token":null}"#,
-            "nope",
-        ] {
-            assert_eq!(refresh_token(none), None, "{none}");
-        }
+    #[rstest]
+    #[case::granted(r#"{"access_token":"a","refresh_token":"r 1"}"#, Some("r 1"))]
+    #[case::missing(r#"{"access_token":"a"}"#, None)]
+    #[case::empty(r#"{"refresh_token":""}"#, None)]
+    #[case::null(r#"{"refresh_token":null}"#, None)]
+    #[case::invalid_json("nope", None)]
+    fn a_refresh_token_is_kept_only_when_net2_grants_one(
+        #[case] reply: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        assert_eq!(refresh_token(reply).as_deref(), expected);
+    }
+
+    #[rstest]
+    #[case::jpg("12345.JPG", Some(12345))]
+    #[case::jpeg("7.jpeg", Some(7))]
+    #[case::webp("8.webp", Some(8))]
+    #[case::leading_zeros("00123.jpg", None)]
+    #[case::zero("0.jpg", None)]
+    #[case::overflow("2147483648.jpg", None)]
+    #[case::name("person.jpg", None)]
+    #[case::no_extension("12345", None)]
+    #[case::space("12 345.jpg", None)]
+    #[case::negative("-1.jpg", None)]
+    fn portraits_need_an_unambiguous_id(#[case] name: &str, #[case] expected: Option<i32>) {
+        assert_eq!(portrait_user_id(name).ok(), expected);
     }
 
     #[test]
-    fn portraits_need_an_unambiguous_id_and_honest_contents() {
-        assert_eq!(portrait_user_id("12345.JPG"), Ok(12345));
-        assert_eq!(portrait_user_id("7.jpeg"), Ok(7));
-        assert_eq!(portrait_user_id("8.webp"), Ok(8));
-        for bad in [
-            "00123.jpg",
-            "0.jpg",
-            "2147483648.jpg",
-            "person.jpg",
-            "12345",
-            "12 345.jpg",
-            "-1.jpg",
-        ] {
-            assert!(portrait_user_id(bad).is_err(), "{bad}");
-        }
+    fn portraits_need_honest_contents() {
         let jpeg = tiny_jpeg();
         assert_eq!(check_portrait("1.jpg", &jpeg, jpeg.len()), Ok(()));
         assert_eq!(check_portrait("1.JPEG", &jpeg, jpeg.len()), Ok(()));
@@ -732,14 +730,23 @@ mod tests {
         assert!(check_portrait("1.png", &jpeg, jpeg.len()).is_err());
         assert!(check_portrait("1.jpg", &jpeg, 0).is_err());
         assert!(check_portrait("1.jpg", &jpeg, MAX_IMAGE_BYTES + 1).is_err());
-        assert_eq!(fit(1024, 1024), (1024, 1024));
-        assert_eq!(fit(4000, 3000), (1200, 900));
-        assert_eq!(fit(3000, 4001), (900, 1200));
-        assert_eq!(fit(20000, 5), (1200, 1));
         assert_eq!(
             duplicate_flags(&[Some(1), Some(2), Some(1), None, None]),
             [true, false, true, false, false]
         );
+    }
+
+    #[rstest]
+    #[case::already_fits(1024, 1024, (1024, 1024))]
+    #[case::landscape(4000, 3000, (1200, 900))]
+    #[case::portrait(3000, 4001, (900, 1200))]
+    #[case::thin(20000, 5, (1200, 1))]
+    fn photos_fit_net2_without_enlargement(
+        #[case] width: u32,
+        #[case] height: u32,
+        #[case] expected: (u32, u32),
+    ) {
+        assert_eq!(fit(width, height), expected);
     }
 
     #[test]
@@ -756,25 +763,26 @@ mod tests {
         assert!(check_portrait("1.jpg", &[0xFF, 0xD8, 0xFF], 3).is_err());
     }
 
+    #[rstest]
+    #[case::bad_request(400, "refused", false)]
+    #[case::forbidden(403, "permission", true)]
+    #[case::not_found(404, "Not found", false)]
+    #[case::too_large(413, "larger", false)]
+    #[case::rate_limited(429, "Wait a minute", true)]
+    #[case::server_error(500, "HTTP 500", false)]
+    fn each_refusal_says_what_net2_meant(
+        #[case] status: u16,
+        #[case] words: &str,
+        #[case] halt: bool,
+    ) {
+        let problem = status_failure(status, None, false, "");
+        assert!(problem.message.contains(words), "{}", problem.message);
+        assert_eq!(problem.halt, halt);
+        assert!(!problem.expired);
+    }
+
     #[test]
-    fn each_refusal_says_what_net2_meant() {
-        for (status, words) in [
-            (400, "refused"),
-            (403, "permission"),
-            (404, "Not found"),
-            (413, "larger"),
-            (429, "Wait a minute"),
-            (500, "HTTP 500"),
-        ] {
-            let problem = status_failure(status, None, false, "");
-            assert!(
-                problem.message.contains(words),
-                "{status}: {}",
-                problem.message
-            );
-            assert_eq!(problem.halt, matches!(status, 403 | 429), "{status}");
-            assert!(!problem.expired, "{status}");
-        }
+    fn answered_writes_are_certain_and_error_details_are_bounded() {
         // A 4xx on a write was answered, so it did not half-happen.
         assert!(!status_failure(404, None, true, "").uncertain);
         let long = format!(r#"{{"message":"{}"}}"#, "x".repeat(2000));
@@ -787,23 +795,20 @@ mod tests {
         );
     }
 
-    #[test]
-    fn only_a_usable_access_token_signs_in() {
-        assert_eq!(
-            access_token(r#"{"access_token":"abc.DEF-123_=","expires_in":3600}"#).as_deref(),
-            Some("abc.DEF-123_=")
-        );
-        for bad in [
-            r#"{"access_token":""}"#,
-            r#"{"access_token":"two words"}"#,
-            r#"{"access_token":"line\nbreak"}"#,
-            r#"{"access_token":"café"}"#,
-            r#"{"access_token":42}"#,
-            r#"{"token":"abc"}"#,
-            "<html>sign in</html>",
-        ] {
-            assert_eq!(access_token(bad), None, "{bad}");
-        }
+    #[rstest]
+    #[case::usable(
+        r#"{"access_token":"abc.DEF-123_=","expires_in":3600}"#,
+        Some("abc.DEF-123_=")
+    )]
+    #[case::empty(r#"{"access_token":""}"#, None)]
+    #[case::space(r#"{"access_token":"two words"}"#, None)]
+    #[case::newline(r#"{"access_token":"line\nbreak"}"#, None)]
+    #[case::non_ascii(r#"{"access_token":"café"}"#, None)]
+    #[case::number(r#"{"access_token":42}"#, None)]
+    #[case::missing(r#"{"token":"abc"}"#, None)]
+    #[case::html("<html>sign in</html>", None)]
+    fn only_a_usable_access_token_signs_in(#[case] reply: &str, #[case] expected: Option<&str>) {
+        assert_eq!(access_token(reply).as_deref(), expected);
     }
 
     #[test]

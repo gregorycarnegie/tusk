@@ -181,6 +181,7 @@ pub fn write_csv(
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn strings(row: &[&str]) -> Vec<String> {
         row.iter().map(|s| s.to_string()).collect()
@@ -274,28 +275,34 @@ mod tests {
         assert!(rows(MAX_ROWS + 1).is_err());
     }
 
-    #[test]
-    fn a_guess_needs_exactly_one_heading_that_means_the_field() {
+    #[rstest]
+    #[case::surname(&["Surname", "Last name"], Some(0))]
+    #[case::first_name(&["First name"], Some(1))]
+    #[case::ambiguous(&["Card Number"], None)]
+    #[case::missing(&["Photo"], None)]
+    fn a_guess_needs_exactly_one_heading_that_means_the_field(
+        #[case] names: &[&str],
+        #[case] expected: Option<usize>,
+    ) {
         let headers = strings(&["SURNAME", "first_name", "Card Number", "card number", ""]);
-        assert_eq!(guess(&headers, &["Surname", "Last name"]), Some(0));
-        assert_eq!(guess(&headers, &["First name"]), Some(1));
-        assert_eq!(
-            guess(&headers, &["Card Number"]),
-            None,
-            "two columns claim it"
-        );
-        assert_eq!(guess(&headers, &["Photo"]), None);
-        assert_eq!(column_name(&headers, 0), "SURNAME");
-        assert_eq!(column_name(&headers, 4), "Column E");
-        assert_eq!(column_name(&headers, 26), "Column AA");
+        assert_eq!(guess(&headers, names), expected);
     }
 
-    #[test]
-    fn a_written_csv_reads_back_the_same() {
+    #[rstest]
+    #[case::heading(0, "SURNAME")]
+    #[case::empty_heading(4, "Column E")]
+    #[case::beyond_z(26, "Column AA")]
+    fn columns_without_headings_use_excel_names(#[case] column: usize, #[case] expected: &str) {
+        let headers = strings(&["SURNAME", "first_name", "Card Number", "card number", ""]);
+        assert_eq!(column_name(&headers, column), expected);
+    }
+
+    #[rstest]
+    fn a_written_csv_reads_back_the_same(#[values(false, true)] bom: bool) {
         let headers = strings(&["Name", "Notes"]);
         let rows = vec![strings(&["Éva", "comma, \"quote\"\nline"])];
-        let bytes = write_csv(&headers, rows.clone(), true).unwrap();
-        assert!(bytes.starts_with(b"\xef\xbb\xbf"));
+        let bytes = write_csv(&headers, rows.clone(), bom).unwrap();
+        assert_eq!(bytes.starts_with(b"\xef\xbb\xbf"), bom);
         let back = read("x.csv", &bytes).unwrap();
         assert_eq!((back.headers, back.rows), (headers, rows));
     }

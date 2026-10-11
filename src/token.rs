@@ -34,6 +34,7 @@ pub fn token(reply: &Reply) -> Option<Token> {
 mod tests {
     use super::*;
     use crate::protocol::{ACK, ADDR, OP_READ_MIFARE, REAL_TOKEN_READ, frame, parse};
+    use rstest::rstest;
 
     #[test]
     fn decodes_the_token_from_a_real_read() {
@@ -45,21 +46,14 @@ mod tests {
         assert_eq!(t.number, 34935097);
     }
 
-    #[test]
-    fn keeps_a_uid_whole_when_it_ends_in_zero() {
-        let seven_byte_uid = [0x04, 0x5B, 0x7D, 0x40, 0x39, 0x12, 0x00];
+    #[rstest]
+    #[case::one_zero(&[0x04, 0x5B, 0x7D, 0x40, 0x39, 0x12, 0x00], "045B7D40391200")]
+    #[case::two_zeros(&[0x04, 0x5B, 0x7D, 0x40, 0x39], "045B7D40390000")]
+    fn keeps_a_uid_whole_when_it_ends_in_zero(#[case] uid: &[u8], #[case] expected: &str) {
         let mut payload = [0u8; 32];
-        payload[..7].copy_from_slice(&seven_byte_uid);
+        payload[..uid.len()].copy_from_slice(uid);
         let reply = parse(&frame(ADDR, ACK, &payload)).expect("must parse");
-        assert_eq!(token(&reply).expect("a card").hex, "045B7D40391200");
-    }
-
-    #[test]
-    fn keeps_a_seven_byte_uid_whole_when_it_ends_in_two_zeros() {
-        let mut payload = [0u8; 32];
-        payload[..5].copy_from_slice(&[0x04, 0x5B, 0x7D, 0x40, 0x39]);
-        let reply = parse(&frame(ADDR, ACK, &payload)).expect("must parse");
-        assert_eq!(token(&reply).expect("a card").hex, "045B7D40390000");
+        assert_eq!(token(&reply).expect("a card").hex, expected);
     }
 
     #[test]

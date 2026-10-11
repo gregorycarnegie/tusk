@@ -111,6 +111,7 @@ impl QueryBuilder for TSql {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
+    use rstest::rstest;
     use sea_query::{ExprTrait, JoinType, Order, Query};
 
     use super::*;
@@ -148,18 +149,20 @@ mod tests {
 
     /// Whatever the text, it stays one N'…' value: a quote cannot end it, and
     /// nothing else in T-SQL can either.
-    #[test]
-    fn text_cannot_break_out_of_its_quotes() {
-        let field = |text: &str| wh(Expr::col(("u", "Field14_50")).eq(text));
-        assert!(field("O'Brien").ends_with("WHERE [u].[Field14_50] = N'O''Brien'"));
-        assert!(field("x' OR 1=1 --").ends_with("WHERE [u].[Field14_50] = N'x'' OR 1=1 --'"));
-        assert!(
-            field("a\\'b").ends_with("= N'a\\''b'"),
-            "a backslash is just a backslash"
+    #[rstest]
+    #[case::apostrophe("O'Brien", "N'O''Brien'")]
+    #[case::sql_injection("x' OR 1=1 --", "N'x'' OR 1=1 --'")]
+    #[case::backslash("a\\'b", "N'a\\''b'")]
+    #[case::unicode("Łukasz Żółć", "N'Łukasz Żółć'")]
+    #[case::newline("two\nlines", "N'two\nlines'")]
+    #[case::empty("", "N''")]
+    fn text_cannot_break_out_of_its_quotes(#[case] text: &str, #[case] literal: &str) {
+        assert_eq!(
+            wh(Expr::col(("u", "Field14_50")).eq(text)),
+            format!(
+                "SELECT [u].[UserID] FROM [sdk].[UsersEx] AS [u] WHERE [u].[Field14_50] = {literal}"
+            )
         );
-        assert!(field("Łukasz Żółć").ends_with("= N'Łukasz Żółć'"));
-        assert!(field("two\nlines").ends_with("= N'two\nlines'"));
-        assert!(field("").ends_with("= N''"));
     }
 
     #[test]

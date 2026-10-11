@@ -264,39 +264,38 @@ pub fn read_date(text: &str) -> Result<Option<String>, String> {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn row(cells: &[&str]) -> Vec<String> {
         cells.iter().map(|s| s.to_string()).collect()
     }
 
-    #[test]
-    fn dates_are_read_day_first_and_never_guessed() {
-        for (text, date) in [
-            ("2027-07-31", "2027-07-31"),
-            ("2027-Jul-31", "2027-07-31"),
-            ("1999-Jan-01", "1999-01-01"),
-            ("31/07/2027", "2027-07-31"),
-            ("1/2/2027", "2027-02-01"),
-            ("31-July-2027", "2027-07-31"),
-            ("29/02/2028", "2028-02-29"),
-            ("2027-07-31 00:00:00", "2027-07-31"),
-        ] {
-            assert_eq!(read_date(text), Ok(Some(date.into())), "{text}");
-        }
-        assert_eq!(read_date("  "), Ok(None));
-        for bad in [
-            "07/31/2027",
-            "29/02/2027",
-            "31/04/2027",
-            "2027-13-01",
-            "27-07-31",
-            "0001-01-01",
-            "31 July 2027",
-            "soon",
-            "2027-Ju-31",
-        ] {
-            assert!(read_date(bad).is_err(), "{bad}");
-        }
+    #[rstest]
+    #[case::iso("2027-07-31", Some("2027-07-31"))]
+    #[case::net2("2027-Jul-31", Some("2027-07-31"))]
+    #[case::january("1999-Jan-01", Some("1999-01-01"))]
+    #[case::uk("31/07/2027", Some("2027-07-31"))]
+    #[case::day_first("1/2/2027", Some("2027-02-01"))]
+    #[case::full_month("31-July-2027", Some("2027-07-31"))]
+    #[case::leap_day("29/02/2028", Some("2028-02-29"))]
+    #[case::workbook_time("2027-07-31 00:00:00", Some("2027-07-31"))]
+    #[case::blank("  ", None)]
+    fn dates_are_read_day_first(#[case] text: &str, #[case] expected: Option<&str>) {
+        assert_eq!(read_date(text), Ok(expected.map(String::from)));
+    }
+
+    #[rstest]
+    #[case::month_first("07/31/2027")]
+    #[case::not_a_leap_year("29/02/2027")]
+    #[case::short_month("31/04/2027")]
+    #[case::invalid_month("2027-13-01")]
+    #[case::short_year("27-07-31")]
+    #[case::year_out_of_range("0001-01-01")]
+    #[case::no_separator("31 July 2027")]
+    #[case::not_a_date("soon")]
+    #[case::incomplete_month("2027-Ju-31")]
+    fn dates_are_never_guessed(#[case] text: &str) {
+        assert!(read_date(text).is_err());
     }
 
     #[test]

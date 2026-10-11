@@ -370,6 +370,7 @@ fn same_number(left: &str, right: &str, format: Format) -> bool {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     /// A queue from a file, its columns found by their headings.
     fn parse(bytes: &[u8], replace: bool, format: Format) -> Result<Batch, String> {
@@ -434,16 +435,18 @@ mod tests {
             .current()
             .is_some()
         );
-        for invalid in [
-            "First name,Card Number\nJohn,1",
-            "Surname,First name,Card Number\nDoe,John",
-            "Surname,First name,Card Number\nDoe,John,1,extra",
-            "Surname,First name,Card Number\n,,",
-            "Surname,First name,Card Number",
-        ] {
-            assert!(parse(invalid.as_bytes(), false, Format::Decimal).is_err());
-        }
-        assert!(parse(&[0xff], false, Format::Decimal).is_err());
+    }
+
+    #[rstest]
+    #[case::missing_surname(b"First name,Card Number\nJohn,1")]
+    #[case::short_row(b"Surname,First name,Card Number\nDoe,John")]
+    #[case::extra_field(b"Surname,First name,Card Number\nDoe,John,1,extra")]
+    #[case::no_name(b"Surname,First name,Card Number\n,,")]
+    #[case::no_people(b"Surname,First name,Card Number")]
+    #[case::invalid_utf8(&[0xff])]
+    #[case::duplicate_column(b"Surname,First name,Card Number,card number\nDoe,Jane,,\n")]
+    fn invalid_csv_is_refused(#[case] input: &[u8]) {
+        assert!(parse(input, false, Format::Decimal).is_err());
     }
 
     #[test]
@@ -625,9 +628,7 @@ mod tests {
     }
 
     #[test]
-    fn a_csv_must_name_each_column_once_and_stay_a_manageable_size() {
-        let twice = "Surname,First name,Card Number,card number\nDoe,Jane,,\n";
-        assert!(parse(twice.as_bytes(), false, Format::Decimal).is_err());
+    fn a_csv_must_stay_a_manageable_size() {
         let rows = |n: usize| {
             let mut csv = "Surname,First name,Card Number\n".to_string();
             csv.push_str(&"Doe,Jane,\n".repeat(n));

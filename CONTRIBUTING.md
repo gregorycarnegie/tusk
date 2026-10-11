@@ -48,6 +48,10 @@ cargo w      # the polling loop and the crash message, in headless Chrome
 python tests/static_site.py  # after building dist; needs Chrome and chromedriver
 ```
 
+Use `rstest` with named `#[case::name(...)]` cases for table-driven host tests.
+Keep `proptest` for generated inputs and ordinary `#[test]` functions for
+individual scenarios. `rstest` is a host-only dev dependency.
+
 The static-site test also uploads the supplied Net2 sample in
 `tests/fixtures/net2-import.csv`, verifies decimal/hex downloads, and checks
 desktop/mobile layouts. It stands in a fake Net2 Local API for `fetch`, to
