@@ -46,7 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first name and surname Net2 or an earlier row already has is held back too,
   with an **Add anyway** tick for when it really is a different person. The
   download is the sheet with each new User ID filled in, so running it again
-  adds nobody twice. Checked on a real Net2 with one person: `POST /users`,
+  adds nobody twice. Checked on a real Net2 with 20 people, stopped after 5
+  and resumed from the downloaded sheet: each was added once, and an unknown
+  access level and an existing name were held back. Checked with one person: `POST /users`,
   the department and access level `PUT`s, and the portrait upload. The
   expiry date was later checked on a real Net2 too: it arrives on the right
   day and survives the department and access level `PUT`s. Its time (end of

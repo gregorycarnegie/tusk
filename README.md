@@ -194,7 +194,9 @@ if results have not been downloaded. Downloading results clears that warning.
 **Download with User IDs** saves the sheet with each new person's User ID
 filled in; load that file again and nobody is added twice. Then give out cards with **People already in
 Net2** under **Batch assign cards**. Adding people is tested on a real Net2:
-the person, their department, access level and portrait all arrived. An expiry
+the person, their department, access level and portrait all arrived, and a
+run of 20 people stopped after 5 and resumed from the downloaded sheet added
+each person exactly once. An expiry
 date arrives on the right day, and the department and access level set after
 it leave it in place. That it runs to 23:59 rather than midnight is not yet
 checked on a real Net2, so check the first few if the time matters.
