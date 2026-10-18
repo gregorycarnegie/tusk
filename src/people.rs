@@ -25,9 +25,9 @@ pub const FIRST: usize = 0;
 pub const MIDDLE: usize = 1;
 pub const SURNAME: usize = 2;
 pub const DEPARTMENT: usize = 3;
-const ACCESS_LEVELS: usize = 4;
-const ACTIVATE: usize = 5;
-const EXPIRY: usize = 6;
+pub const ACCESS_LEVELS: usize = 4;
+pub const ACTIVATE: usize = 5;
+pub const EXPIRY: usize = 6;
 const PIN: usize = 7;
 const PHONES: [(usize, &str); 3] = [(8, "telephone"), (9, "extension"), (10, "fax")];
 pub const PHOTO: usize = 11;
@@ -264,6 +264,7 @@ pub fn read_date(text: &str) -> Result<Option<String>, String> {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use googletest::prelude::{anything, assert_that, contains_substring, err, starts_with};
     use rstest::rstest;
 
     fn row(cells: &[&str]) -> Vec<String> {
@@ -295,7 +296,7 @@ mod tests {
     #[case::not_a_date("soon")]
     #[case::incomplete_month("2027-Ju-31")]
     fn dates_are_never_guessed(#[case] text: &str) {
-        assert!(read_date(text).is_err());
+        assert_that!(read_date(text), err(anything()));
     }
 
     #[test]
@@ -349,17 +350,18 @@ mod tests {
             })
         );
         let read = |cells: &[&str]| Person::read(&row(cells), &map, &custom);
-        assert!(
-            read(&["", "", "", "", "", "", "", "", ""])
-                .unwrap_err()
-                .contains("No first name")
+        assert_that!(
+            read(&["", "", "", "", "", "", "", "", ""]),
+            err(contains_substring("No first name"))
         );
-        assert!(
-            read(&["Doe", "", "07/31/2027", "", "", "", "", "", ""])
-                .unwrap_err()
-                .starts_with("Expiration date:")
+        assert_that!(
+            read(&["Doe", "", "07/31/2027", "", "", "", "", "", ""]),
+            err(starts_with("Expiration date:"))
         );
-        assert!(read(&["Doe", "", "", "12a4", "", "", "", "", ""]).is_err());
+        assert_that!(
+            read(&["Doe", "", "", "12a4", "", "", "", "", ""]),
+            err(anything())
+        );
         let town = "x".repeat(51);
         assert_eq!(
             read(&["Doe", "", "", "", "", "", "", &town, ""]).unwrap_err(),
@@ -371,7 +373,7 @@ mod tests {
     fn an_activation_after_the_expiry_is_refused() {
         let map = [Some(0), None, None, None, None, Some(1), Some(2)];
         let read = |from: &str, until: &str| Person::read(&row(&["Ada", from, until]), &map, &[]);
-        assert!(read("2027-01-02", "2027-01-01").is_err());
+        assert_that!(read("2027-01-02", "2027-01-01"), err(anything()));
         let one_day = read("2027-01-01", "2027-01-01").unwrap().body();
         assert_eq!(one_day["activateDate"], "2027-01-01T00:00:00");
         assert_eq!(read("", "").unwrap().body().get("expiryDate"), None);

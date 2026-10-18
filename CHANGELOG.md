@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0-beta.2] - 2026-10-18
+
 ### Added
+
+- Reader LED feedback after a successful card assignment, cleared when the
+  card is lifted. Direct assignments wait for Net2 to confirm saving; rejected
+  or uncertain writes do not signal success. Uses the documented token-found
+  LED state. Checked on a real Paxton reader with a local CSV assignment:
+  the LED changed on success, held-card reading continued, and lifting the
+  card restored idle. Net2 confirmation and failure cases use stand-in tests.
+- Add people's preview now includes access levels and activation/expiry
+  dates. After checking, it shows Net2's matched level names and normalized
+  dates, without displaying PINs or custom fields.
+
+- **Download results** for Add people: a separate CSV keeps each attempted
+  addition's sheet row, name, User ID and outcome, including partial failures
+  and uncertain writes. Undownloaded results trigger the leave-page warning
+  and a confirmation before replacing the sheet. The existing User ID sheet
+  download remains available for reimporting.
 
 - **Add people**, a new tab that creates Net2 users from a spreadsheet: names,
   department, activation and expiry dates, PIN, phone numbers, Net2's custom
@@ -341,7 +359,8 @@ because each was a wrong assumption worth remembering:
   reports.
 - Tokens are assumed to be 4 to 8 bytes. Longer ones would be ignored.
 
-[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.1...HEAD
+[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.2...HEAD
+[0.5.0-beta.2]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.1...v0.5.0-beta.2
 [0.5.0-beta.1]: https://github.com/gregorycarnegie/tusk/compare/v0.4.3...v0.5.0-beta.1
 [0.4.3]: https://github.com/gregorycarnegie/tusk/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/gregorycarnegie/tusk/compare/v0.4.1...v0.4.2

@@ -286,7 +286,9 @@ pub fn setup(state: Rc<RefCell<State>>) {
     }
 
     let callback = Closure::<dyn FnMut(BeforeUnloadEvent)>::new(move |event: BeforeUnloadEvent| {
-        if state.borrow().batch.as_ref().is_some_and(|b| b.dirty) {
+        if state.borrow().batch.as_ref().is_some_and(|b| b.dirty)
+            || crate::people_client::has_unsaved_results()
+        {
             event.prevent_default();
             event.set_return_value("");
         }
@@ -361,13 +363,12 @@ fn selected_format() -> Format {
 }
 
 fn download(batch: &Batch, filename: &str) -> Result<(), String> {
-    save(
-        &batch.export()?,
-        &format!(
-            "{}-cards.csv",
-            filename.rsplit_once('.').map_or(filename, |(base, _)| base)
-        ),
-    )
+    save(&batch.export()?, &format!("{}-cards.csv", stem(filename)))
+}
+
+/// `name` without its extension.
+pub fn stem(name: &str) -> &str {
+    name.rsplit_once('.').map_or(name, |(base, _)| base)
 }
 
 /// Hand `bytes` to the browser as a CSV download called `name`.

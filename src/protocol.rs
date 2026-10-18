@@ -10,6 +10,8 @@ pub const ADDR: u8 = 0x88;
 /// without it. Opcode names are Paxton's, from the BOARD_CMD enum in Net2.
 pub const OP_LEDS: u8 = 0x24;
 pub const LEDS_ARG: u8 = 0x0A;
+/// Net2's token-found LED state, used after a successful assignment.
+pub const LEDS_ASSIGNED: u8 = 0x06;
 
 /// RWD_READ_MIFARE: answers with the card's UID, then zero padding.
 pub const OP_READ_MIFARE: u8 = 0xD7;

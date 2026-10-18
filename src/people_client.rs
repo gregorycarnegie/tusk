@@ -19,7 +19,8 @@ use crate::{
     net2::{check_portrait, created_id, failure, read_custom_fields, read_named, read_users},
     net2_client::call,
     people::{
-        Custom, DEPARTMENT, FIRST, MIDDLE, PHOTO, Person, SURNAME, USER_ID, fields, name_key,
+        ACCESS_LEVELS, ACTIVATE, Custom, DEPARTMENT, EXPIRY, FIRST, MIDDLE, PHOTO, Person, SURNAME,
+        USER_ID, fields, name_key,
     },
     portrait_client::{PACE_MS, base64, convert, header, sleep},
     reader::{State, Tool},
@@ -64,6 +65,8 @@ struct Loaded {
     filename: String,
     custom: Vec<Custom>,
     rows: Vec<Row>,
+    results: Vec<[String; 4]>,
+    dirty: bool,
 }
 
 thread_local! {
@@ -83,6 +86,10 @@ fn button(id: &str) -> HtmlButtonElement {
 
 fn notice(text: &str) {
     element("people-notice").set_text_content(Some(text));
+}
+
+pub fn has_unsaved_results() -> bool {
+    LOADED.with_borrow(|loaded| loaded.as_ref().is_some_and(|l| l.dirty))
 }
 
 /// Every row that was not sent needs checking again.
@@ -111,7 +118,8 @@ fn unchecked() -> Row {
 }
 
 /// The row as the picked columns read it, before any check.
-fn preview(sheet_row: &[String], map: &[Option<usize>]) -> [String; 3] {
+/// A checked row shows what Net2 will be sent; an unchecked one, the sheet.
+fn preview(sheet_row: &[String], map: &[Option<usize>], person: Option<&Person>) -> [String; 6] {
     let get = |field: usize| {
         map.get(field)
             .copied()
@@ -124,7 +132,22 @@ fn preview(sheet_row: &[String], map: &[Option<usize>]) -> [String; 3] {
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join(" ");
-    [name, get(DEPARTMENT).into(), get(PHOTO).into()]
+    let [access, activate, expiry] = match person {
+        Some(person) => [
+            person.access_levels.join("; "),
+            person.activate.clone().unwrap_or_default(),
+            person.expiry.clone().unwrap_or_default(),
+        ],
+        None => [ACCESS_LEVELS, ACTIVATE, EXPIRY].map(|field| get(field).into()),
+    };
+    [
+        name,
+        get(DEPARTMENT).into(),
+        access,
+        activate,
+        expiry,
+        get(PHOTO).into(),
+    ]
 }
 
 pub fn render(state: &State) {
@@ -153,6 +176,8 @@ pub fn render(state: &State) {
             n => format!("Add {n} people to Net2"),
         }));
         button("people-download").set_disabled(busy || !added);
+        button("people-results")
+            .set_disabled(busy || loaded.as_ref().is_none_or(|l| l.results.is_empty()));
         let Some(loaded) = loaded else { return };
         let mut node = element("people-rows").first_element_child();
         for (index, row) in rows.iter().enumerate() {
@@ -160,11 +185,19 @@ pub fn render(state: &State) {
             let cells: Vec<_> =
                 std::iter::successors(tr.first_element_child(), |cell| cell.next_element_sibling())
                     .collect();
-            let [name, department, photo] = preview(&loaded.sheet.rows[index], &map);
-            let result = cells[4].first_element_child().unwrap();
-            for (cell, text) in [&cells[1], &cells[2], &cells[3], &result].into_iter().zip([
+            let [name, department, access, activate, expiry, photo] =
+                preview(&loaded.sheet.rows[index], &map, row.person.as_ref());
+            let result = cells[7].first_element_child().unwrap();
+            for (cell, text) in [
+                &cells[1], &cells[2], &cells[3], &cells[4], &cells[5], &cells[6], &result,
+            ]
+            .into_iter()
+            .zip([
                 name,
                 department,
+                access,
+                activate,
+                expiry,
                 photo,
                 row.text.clone(),
             ]) {
@@ -180,7 +213,7 @@ pub fn render(state: &State) {
                 .unwrap()
                 .unchecked_into::<HtmlInputElement>()
                 .set_checked(row.anyway);
-            cells[4].set_class_name(match row.status {
+            cells[7].set_class_name(match row.status {
                 Status::Held if row.anyway => "",
                 Status::Held | Status::Unsure => "problem",
                 Status::Added => "done",
@@ -206,6 +239,18 @@ async fn choose_sheet(state: Rc<RefCell<State>>) {
     };
     match sheet {
         Ok(sheet) => {
+            if has_unsaved_results()
+                && !web_sys::window()
+                    .unwrap()
+                    .confirm_with_message(
+                        "Replace this sheet? Import results since your last results download will be lost. People already added remain in Net2.",
+                    )
+                    .unwrap_or(false)
+            {
+                BUSY.set(false);
+                notice("Kept the current sheet. Download results before replacing it.");
+                return crate::client::render(&state.borrow());
+            }
             // This site's names for its custom fields, so the right column goes
             // in each; Net2's defaults if it does not say.
             let custom = match call(&state, "GET", "/users/customfieldnames", None).await {
@@ -218,12 +263,12 @@ async fn choose_sheet(state: Rc<RefCell<State>>) {
             body.set_text_content(None);
             for index in 0..sheet.rows.len() {
                 let tr = document.create_element("tr").unwrap();
-                for column in 0..5 {
+                for column in 0..8 {
                     let td = document.create_element("td").unwrap();
                     if column == 0 {
                         td.set_text_content(Some(&(index + 2).to_string()));
                     }
-                    if column == 4 {
+                    if column == 7 {
                         // The result, then the choice a name match leaves.
                         td.set_inner_html(&format!(
                             r#"<span></span><label class="checkbox anyway" hidden=""><input type="checkbox" data-row="{index}"><span>Add anyway: someone else</span></label>"#
@@ -244,6 +289,8 @@ async fn choose_sheet(state: Rc<RefCell<State>>) {
                 filename: file.name(),
                 custom,
                 rows,
+                results: Vec::new(),
+                dirty: false,
             }));
         }
         Err(message) => notice(&message),
@@ -316,16 +363,17 @@ async fn check(state: Rc<RefCell<State>>) {
         notice(&format!("Checking {} of {}…", index + 1, sheet_rows.len()));
         let mut row = unchecked();
         let outcome = async {
-            let person = Person::read(cells, &map, &custom)?;
+            let mut person = Person::read(cells, &map, &custom)?;
             if !person.user_id.is_empty() {
                 return Err(format!("Already added: user {}.", person.user_id));
             }
-            for wanted in &person.access_levels {
-                let (id, _) = levels
+            for wanted in &mut person.access_levels {
+                let (id, name) = levels
                     .iter()
                     .find(|(_, name)| name.eq_ignore_ascii_case(wanted))
                     .ok_or_else(|| format!("Net2 has no access level {wanted}."))?;
                 row.access_levels.push(*id);
+                *wanted = name.clone();
             }
             if !person.department.is_empty() {
                 row.department = Some(
@@ -373,7 +421,7 @@ async fn check(state: Rc<RefCell<State>>) {
     });
     BUSY.set(false);
     notice(&format!(
-        "Checked: {ready} ready, {held} held back. Check each name, department and photo before adding."
+        "Checked: {ready} ready, {held} held back. Check each name, department, access level, date and photo before adding."
     ));
     crate::client::render(&state.borrow());
 }
@@ -384,6 +432,7 @@ async fn check(state: Rc<RefCell<State>>) {
 async fn create(state: Rc<RefCell<State>>) {
     BUSY.set(true);
     STOP.set(false);
+    crate::client::render(&state.borrow());
     let todo: Vec<(usize, Row)> = LOADED.with_borrow(|l| {
         let rows = l.as_ref().unwrap().rows.iter().cloned().enumerate();
         rows.filter(|(_, row)| row.ready() && row.person.is_some())
@@ -398,6 +447,17 @@ async fn create(state: Rc<RefCell<State>>) {
             break;
         }
         notice(&format!("Adding {} of {}…", position + 1, todo.len()));
+        let result_index = LOADED.with_borrow_mut(|loaded| {
+            let loaded = loaded.as_mut().unwrap();
+            loaded.dirty = true;
+            loaded.results.push([
+                (index + 2).to_string(),
+                person.name(),
+                String::new(),
+                "Awaiting Net2. Check Net2 before retrying if interrupted.".into(),
+            ]);
+            loaded.results.len() - 1
+        });
         let reply = call(&state, "POST", "/users", Some(&person.body())).await;
         let (status, mut text, mut stop) =
             match reply.map(|body| created_id(&body, &person.first, &person.last)) {
@@ -457,7 +517,10 @@ async fn create(state: Rc<RefCell<State>>) {
             }
         }
         LOADED.with_borrow_mut(|l| {
-            let row = &mut l.as_mut().unwrap().rows[*index];
+            let loaded = l.as_mut().unwrap();
+            loaded.results[result_index][2] = id.map_or(String::new(), |id| id.to_string());
+            loaded.results[result_index][3] = text.clone();
+            let row = &mut loaded.rows[*index];
             row.status = status;
             row.text = text;
         });
@@ -470,7 +533,7 @@ async fn create(state: Rc<RefCell<State>>) {
     }
     BUSY.set(false);
     notice(&format!(
-        "{} {added} of {} added. Download the sheet to keep their User IDs.",
+        "{} {added} of {} added. Download results to keep their User IDs and outcomes; download the sheet to import again.",
         if halted { "Stopped." } else { "Done." },
         todo.len()
     ));
@@ -502,11 +565,24 @@ fn download() -> Result<(), String> {
                 cells
             });
         let bytes = write_csv(&headers, rows, loaded.sheet.bom)?;
-        let name = &loaded.filename;
-        let base = name
-            .rsplit_once('.')
-            .map_or(name.as_str(), |(base, _)| base);
+        let base = crate::batch_client::stem(&loaded.filename);
         crate::batch_client::save(&bytes, &format!("{base}-net2.csv"))
+    })
+}
+
+fn download_results() -> Result<(), String> {
+    LOADED.with_borrow_mut(|loaded| {
+        let Some(loaded) = loaded else { return Ok(()) };
+        let headers = ["Sheet row", "Name", "User ID", "Result"].map(String::from);
+        let bytes = write_csv(
+            &headers,
+            loaded.results.iter().map(|row| row.to_vec()),
+            loaded.sheet.bom,
+        )?;
+        let base = crate::batch_client::stem(&loaded.filename);
+        crate::batch_client::save(&bytes, &format!("{base}-results.csv"))?;
+        loaded.dirty = false;
+        Ok(())
     })
 }
 
@@ -575,6 +651,10 @@ pub fn setup(state: Rc<RefCell<State>>) {
         if let Err(message) = download() {
             notice(&message);
         }
+    });
+    on_click("people-results", || match download_results() {
+        Ok(()) => notice("Results downloaded. Keep this copy of the User IDs and outcomes."),
+        Err(message) => notice(&message),
     });
     on_click("people-create", move || {
         let (count, twins) = LOADED.with_borrow(|l| {

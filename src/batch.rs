@@ -48,6 +48,8 @@ pub struct Batch {
     surname_column: usize,
     history: Vec<usize>,
     last_seen: Option<String>,
+    /// The card on the reader that was just given to someone, for its LED.
+    signal: Option<String>,
     bom: bool,
 }
 
@@ -115,6 +117,7 @@ impl Batch {
             surname_column,
             history: Vec::new(),
             last_seen: None,
+            signal: None,
             bom: sheet.bom,
         })
     }
@@ -206,6 +209,11 @@ impl Batch {
         self.rows.iter().filter(|r| r.assigned.is_some()).count()
     }
 
+    /// Whether `card` is the one just given to someone.
+    pub fn signals(&self, card: Option<&Token>) -> bool {
+        card.is_some_and(|card| self.signal.as_ref() == Some(&card.hex))
+    }
+
     /// A card saved to Net2 can only be removed in Net2.
     pub fn can_undo(&self) -> bool {
         self.sending.is_none()
@@ -231,6 +239,7 @@ impl Batch {
             return;
         }
         self.last_seen = identity;
+        self.signal = None;
         if !self.running || self.sending.is_some() {
             return;
         }
@@ -267,6 +276,8 @@ impl Batch {
 
     fn assign(&mut self, index: usize, token: Token) {
         let value = self.format.value(&token);
+        // Net2 may answer after the card has been lifted.
+        self.signal = (self.last_seen.as_ref() == Some(&token.hex)).then(|| token.hex.clone());
         self.rows[index].assigned = Some(token);
         self.history.push(index);
         self.notice = format!(
@@ -333,7 +344,9 @@ impl Batch {
             return;
         }
         if let Some(index) = self.history.pop() {
-            self.rows[index].assigned = None;
+            if self.rows[index].assigned.take().is_some() {
+                self.signal = None;
+            }
             self.rows[index].skipped = false;
             self.running = false;
             self.dirty |= self.net2_ids.is_none();
@@ -370,6 +383,7 @@ fn same_number(left: &str, right: &str, format: Format) -> bool {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use googletest::prelude::{assert_that, contains_substring};
     use rstest::rstest;
 
     /// A queue from a file, its columns found by their headings.
@@ -400,12 +414,18 @@ mod tests {
         batch.observe(None);
         batch.observe(Some(&card)); // A duplicate after lifting it is still refused.
         assert_eq!(batch.assigned_count(), 1);
-        assert!(batch.notice.contains("already belongs to John Doe"));
+        assert_that!(
+            batch.notice,
+            contains_substring("already belongs to John Doe")
+        );
         let mut next = card.clone();
         next.hex = "5B7D403A".into();
         next.number += 1;
         batch.observe(Some(&next)); // Decimal collision with a preserved CSV number.
-        assert!(batch.notice.contains("already belongs to Student Kept"));
+        assert_that!(
+            batch.notice,
+            contains_substring("already belongs to Student Kept")
+        );
         next.hex = "5B7D403B".into();
         next.number += 1;
         batch.observe(Some(&next));
@@ -523,6 +543,62 @@ mod tests {
     }
 
     #[test]
+    fn only_the_card_just_assigned_and_still_held_signals() {
+        let mut batch = queue(
+            "Doe,Jane,
+Roe,John,
+Poe,Jim,
+",
+        );
+        batch.resume(None);
+        batch.observe(Some(&card(1)));
+        assert!(batch.signals(Some(&card(1))));
+        assert!(!batch.signals(Some(&card(2))));
+        batch.skip();
+        batch.undo();
+        assert!(
+            batch.signals(Some(&card(1))),
+            "undoing a skip keeps Jane's card"
+        );
+        batch.undo();
+        assert!(
+            !batch.signals(Some(&card(1))),
+            "undoing Jane's card clears it"
+        );
+        batch.resume(None);
+        batch.observe(Some(&card(1)));
+        batch.observe(None);
+        batch.observe(Some(&card(1)));
+        assert!(
+            !batch.signals(Some(&card(1))),
+            "a re-tap is a duplicate, not a new card"
+        );
+
+        let user = |id| User {
+            id,
+            first: "A".into(),
+            middle: String::new(),
+            last: id.to_string(),
+            has_image: false,
+            expires: None,
+        };
+        let mut batch = Batch::from_users(&[user(1), user(2)], false, TODAY).unwrap();
+        batch.resume(None);
+        batch.observe(Some(&card(1)));
+        assert!(!batch.signals(Some(&card(1))), "not until Net2 accepts it");
+        batch.saved();
+        assert!(batch.signals(Some(&card(1))));
+        batch.observe(None);
+        batch.observe(Some(&card(2)));
+        batch.observe(None);
+        batch.saved();
+        assert!(
+            !batch.signals(Some(&card(2))),
+            "lifted before Net2 answered"
+        );
+    }
+
+    #[test]
     fn skipping_or_undoing_in_a_csv_queue_is_unsaved_work() {
         let mut batch = queue("Doe,Jane,\nRoe,John,\n");
         batch.resume(None);
@@ -587,7 +663,7 @@ mod tests {
         // Not even when new cards were asked for.
         let mut batch = Batch::from_users(&users, true, TODAY).unwrap();
         assert_eq!(batch.row_status(0), "Expired");
-        assert!(batch.notice.contains(": 1 person whose"));
+        assert_that!(batch.notice, contains_substring(": 1 person whose"));
         assert_eq!(batch.current(), Some(1), "the last day still counts");
         batch.resume(None);
         batch.skip();
@@ -624,7 +700,7 @@ mod tests {
         batch.resume(None);
         batch.observe(Some(&card(0x5B7D4039)));
         assert_eq!(batch.assigned_count(), 0);
-        assert!(batch.notice.contains("Old Kept"));
+        assert_that!(batch.notice, contains_substring("Old Kept"));
     }
 
     #[test]

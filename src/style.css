@@ -339,7 +339,7 @@
 
     .review { margin-top: 16px; overflow: hidden; }
     #portrait-list.review, #people-list.review { margin-top: 0; }
-    .review-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px 12px 18px; border-bottom: 1px solid var(--border); }
+    .review-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px 12px 18px; border-bottom: 1px solid var(--border); }
     .review-head h2 { margin: 0; font-size: 1rem; font-weight: 700; }
     .review-foot { padding: 12px 18px; border-top: 1px solid var(--border); }
     .table-scroll { overflow: auto; max-height: 30rem; }
@@ -359,9 +359,11 @@
     #batch-rows tr.current-person td { background: color-mix(in srgb, var(--brand) 13%, var(--surface)); }
     #batch-rows tr.current-person td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
     #portrait-list table { min-width: 46rem; }
+    #people-list table { min-width: 68rem; }
     .anyway { margin-top: 6px; color: var(--text); }
     .anyway span { font-size: .85rem; }
     #people-rows td:first-child { font: .8rem/1.4 var(--mono); color: var(--muted); }
+    #people-rows td:nth-child(5), #people-rows td:nth-child(6) { white-space: nowrap; }
     #portrait-rows td:first-child { white-space: nowrap; }
     #portrait-rows img { width: 2.75rem; height: 2.75rem; object-fit: cover; border-radius: 8px; vertical-align: middle; margin-right: .6rem; box-shadow: 0 0 0 1px var(--border); }
     small.converted { display: block; color: var(--muted); margin-top: .2rem; }

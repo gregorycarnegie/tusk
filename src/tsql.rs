@@ -111,6 +111,7 @@ impl QueryBuilder for TSql {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
+    use googletest::prelude::{assert_that, ends_with};
     use rstest::rstest;
     use sea_query::{ExprTrait, JoinType, Order, Query};
 
@@ -167,9 +168,19 @@ mod tests {
 
     #[test]
     fn a_bracket_in_a_name_is_doubled_and_booleans_are_bits() {
-        assert!(wh(Expr::col(("u", "Odd]Name")).eq(1)).ends_with("WHERE [u].[Odd]]Name] = 1"));
-        assert!(wh(Expr::col(("u", "Active")).eq(true)).ends_with("WHERE [u].[Active] = 1"));
-        assert!(wh(Expr::col(("u", "Active")).eq(false)).ends_with("WHERE [u].[Active] = 0"));
+        let ends = |condition, end| assert_that!(wh(condition), ends_with(end));
+        ends(
+            Expr::col(("u", "Odd]Name")).eq(1),
+            "WHERE [u].[Odd]]Name] = 1",
+        );
+        ends(
+            Expr::col(("u", "Active")).eq(true),
+            "WHERE [u].[Active] = 1",
+        );
+        ends(
+            Expr::col(("u", "Active")).eq(false),
+            "WHERE [u].[Active] = 0",
+        );
     }
 
     use proptest::prelude::*;

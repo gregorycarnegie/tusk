@@ -456,6 +456,9 @@ pub fn duplicate_flags(ids: &[Option<i32>]) -> Vec<bool> {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use googletest::prelude::{
+        anything, assert_that, contains_substring, err, expect_that, gtest, not, starts_with,
+    };
     use rstest::rstest;
 
     /// Smallest header `imagesize` can read: a 1x1 PNG.
@@ -489,7 +492,8 @@ mod tests {
         assert_eq!(parse_origin(input).ok().as_deref(), expected);
     }
 
-    #[test]
+    // expect_that! keeps going, so one run shows every message that is wrong.
+    #[gtest]
     fn errors_keep_details_but_not_tokens() {
         let rejected = status_failure(
             400,
@@ -497,18 +501,19 @@ mod tests {
             false,
             r#"{"message":"invalid_client","access_token":"private"}"#,
         );
-        assert!(rejected.message.contains("invalid_client"));
-        assert!(rejected.message.contains("ClientID"));
-        assert!(!rejected.message.contains("private"));
+        expect_that!(rejected.message, contains_substring("invalid_client"));
+        expect_that!(rejected.message, contains_substring("ClientID"));
+        expect_that!(rejected.message, not(contains_substring("private")));
         assert!(!rejected.halt && !rejected.uncertain);
         let expired = status_failure(401, None, false, "");
         assert!(expired.halt && expired.expired);
         let operator = sign_in_failure(status_failure(401, None, false, r#"{"error":"nope"}"#));
-        assert!(operator.message.starts_with(WRONG_OPERATOR));
-        assert!(operator.message.contains("nope"));
+        expect_that!(operator.message, starts_with(WRONG_OPERATOR));
+        expect_that!(operator.message, contains_substring("nope"));
         assert_eq!(sign_in_failure(rejected.clone()), rejected);
         let limited = status_failure(429, Some("60"), false, "<html>proxy</html>");
-        assert!(limited.message.contains("60 seconds") && !limited.message.contains("html"));
+        expect_that!(limited.message, contains_substring("60 seconds"));
+        expect_that!(limited.message, not(contains_substring("html")));
         assert!(status_failure(502, None, true, "").uncertain);
         assert!(!status_failure(502, None, false, "").uncertain);
     }
@@ -526,8 +531,14 @@ mod tests {
                 .unwrap()
                 .has_image
         );
-        assert!(read_user(r#"{"id":8,"hasImage":false}"#, 7).is_err());
-        assert!(read_users(r#"[{"id":1,"hasImage":false},{"name":"?"}]"#).is_err());
+        assert_that!(
+            read_user(r#"{"id":8,"hasImage":false}"#, 7),
+            err(anything())
+        );
+        assert_that!(
+            read_users(r#"[{"id":1,"hasImage":false},{"name":"?"}]"#),
+            err(anything())
+        );
         assert_eq!(read_users("[]"), Ok(vec![]));
         assert_eq!(
             read_named(r#"[{"id":2,"name":"year 8"},{"id":1,"name":"Year 7"}]"#),
@@ -613,9 +624,12 @@ mod tests {
             ]
         );
         // A working card Tusk cannot name is not quietly left working.
-        assert!(lost_tokens(r#"[{"tokenValue":"111","isLost":false}]"#, "999").is_err());
+        assert_that!(
+            lost_tokens(r#"[{"tokenValue":"111","isLost":false}]"#, "999"),
+            err(anything())
+        );
         assert_eq!(lost_tokens("[]", "999"), Ok(vec![]));
-        assert!(lost_tokens("{}", "999").is_err());
+        assert_that!(lost_tokens("{}", "999"), err(anything()));
     }
 
     #[test]
@@ -650,24 +664,24 @@ mod tests {
             Ok("(No name) (user 5)")
         );
         assert_eq!(describe_owners("[]").as_deref(), Ok("Not in Net2"));
-        assert!(describe_owners(r#"[{"lost":false}]"#).is_err());
-        assert!(describe_owners(r#"{"message":"no"}"#).is_err());
+        assert_that!(describe_owners(r#"[{"lost":false}]"#), err(anything()));
+        assert_that!(describe_owners(r#"{"message":"no"}"#), err(anything()));
     }
 
     #[test]
     fn a_new_user_is_known_by_the_id_net2_gave_the_person_sent() {
         let reply = r#"{"Id":41,"FirstName":"Riya","LastName":"Patel","HasImage":false}"#;
         assert_eq!(created_id(reply, "Riya", "Patel"), Ok(41));
-        assert!(created_id(reply, "Ada", "Patel").is_err());
-        assert!(
+        assert_that!(created_id(reply, "Ada", "Patel"), err(anything()));
+        assert_that!(
             created_id(
                 r#"{"id":0,"firstName":"Riya","lastName":"Patel"}"#,
                 "Riya",
                 "Patel"
-            )
-            .is_err()
+            ),
+            err(anything())
         );
-        assert!(created_id("", "Riya", "Patel").is_err());
+        assert_that!(created_id("", "Riya", "Patel"), err(anything()));
         let named = read_custom_fields(
             r#"[{"id":14,"name":"Admission no","maxLength":20},{"id":13,"name":"Notes","maxLength":0},{"id":2}]"#,
         );
@@ -825,7 +839,7 @@ mod tests {
         assert_eq!(user("", "", "Lovelace").name(), "Lovelace");
         assert_eq!(user("", "", "").name(), "(No name)");
         assert_eq!(read_named("not json"), vec![]);
-        assert!(read_cards("{}").is_err());
+        assert_that!(read_cards("{}"), err(anything()));
     }
 
     use proptest::prelude::*;

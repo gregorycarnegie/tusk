@@ -97,6 +97,12 @@ Open **Batch assign cards** (or `/#batch` locally and `/tusk/#batch` on Pages).
 4. Press **Start / resume**, then tap the named person's card. Wait for the
    assignment to appear before moving to the next card. A held card is accepted
    once; cards already used elsewhere in the batch are refused.
+   The reader switches to its token-found LED state after an assignment
+   succeeds, and returns to idle when the card is lifted. For cards saved
+   directly to Net2, it waits for Net2 to confirm the save. This feedback has
+   been checked on a real Paxton reader with a local CSV assignment: the LED
+   changed on success, reading continued while the card was held, and lifting
+   it restored idle. Waiting for Net2 confirmation is covered by stand-in tests.
 5. Use **Skip person** for an absent student, **Undo last step** to correct a
    mistake, and **Download CSV** to save the result for Net2's import wizard.
 
@@ -168,7 +174,10 @@ dates, PIN, telephone, extension, fax, the photo's file name, a User ID, and
 Net2's custom fields under the names your Net2 gives them. Dates are read as
 2027-07-31, 2027-Jul-31 (as in Net2's import CSV) or 31/07/2027, day before
 month; anything else is refused rather than guessed. **Check against Net2**
-reads Net2's people, departments and access levels, and holds back a row that
+reads Net2's people, departments and access levels. The preview shows matched
+access-level names and activation/expiry dates as year-month-day before you
+confirm. Activation is at 00:00 and expiry at 23:59; blank dates send no date.
+PINs and custom fields are not shown in the preview. The check holds back a row that
 already has a User ID, a department or access level Net2 does not have (Tusk
 never creates one), a photo that was not chosen, and any row it cannot read.
 Someone whose first name and surname Net2 already has, or an earlier row of
@@ -176,6 +185,12 @@ the sheet, is held back too, but with an **Add anyway** tick: two people can
 share a name. **Add people to Net2** asks for confirmation, then creates each
 person, puts them in their department, gives them their access levels and
 uploads their portrait, converted to a JPG when needed as for portraits.
+**Download results** saves a separate CSV with the sheet row, person's name,
+new User ID (when Net2 returned one), and the outcome of each attempted addition.
+It includes failed department, access-level and portrait updates, and uncertain
+outcomes that need checking in Net2 before retrying. It leaves out PINs and other
+source columns. Results stay in this tab; closing it or replacing the sheet warns
+if results have not been downloaded. Downloading results clears that warning.
 **Download with User IDs** saves the sheet with each new person's User ID
 filled in; load that file again and nobody is added twice. Then give out cards with **People already in
 Net2** under **Batch assign cards**. Adding people is tested on a real Net2:

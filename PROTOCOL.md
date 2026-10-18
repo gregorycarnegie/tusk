@@ -98,6 +98,17 @@ five of them, moving on when a read does not come back as an ack:
     0xA8  RWD_READ_HITAG_1
     0xD8  RWD_READ_HID
 
+Tusk uses LED argument `0x06` after a successful batch assignment, holding it
+until the card changes or is lifted. A direct Net2 assignment waits for the
+confirmed save and only signals if that same UID is still on the reader.
+The polling loop sends this argument before reads instead of adding competing
+writes. Idle remains `0x0A`; the handshake is unchanged. This use of the
+token-found state was checked on a real Paxton reader with a local CSV
+assignment: the operator saw the LED change on success and return to idle
+after lifting the card, and the card remained readable while held. Net2
+confirmation and failure cases are tested against a stand-in API.
+Tusk does not send the undocumented beep payload.
+
 Tusk reads Mifare only. It sends `TOKEN_R_DATA` once, in the handshake, because
 Net2 does, and ignores its answer.
 

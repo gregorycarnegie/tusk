@@ -36,12 +36,17 @@ window.errors = [];
 addEventListener('error', e => errors.push(e.message));
 addEventListener('unhandledrejection', e => errors.push(String(e.reason)));
 window.reader = {
-    vendorId: 0x1071, opened: false, card: true, unplugged: false,
+    vendorId: 0x1071, opened: false, card: true, unplugged: false, led: null, assignedSignals: 0,
     async open() { this.opened = true; },
     async sendReport(id, bytes) {
         if (this.unplugged) throw new DOMException('unplugged', 'NotFoundError');
         const key = new TextEncoder().encode('Elephant');
         const op = bytes[3] ^ ((bytes[2] & 128) ? key[bytes[2] % 8] : 0);
+        if (op === 0x24) {
+            const led = bytes[4] ^ ((bytes[2] & 128) ? key[(bytes[2] + 1) % 8] : 0);
+            if (led === 6 && this.led !== 6) this.assignedSignals++;
+            this.led = led;
+        }
         if (op !== 0xd7 && op !== 0x14) return;
         const frame = uid => {
             const reply = new Uint8Array(37);
@@ -110,6 +115,7 @@ window.fetch = async (url, init = {}) => {
             : reply(400, {message: 'invalid_client'});
     }
     if (auth !== 'Bearer ' + net2.token) return reply(401, {Message: 'Authorization has been denied'});
+    if (method === 'PUT' && path === net2.failPath) return reply(400, {message: 'Test failure'});
 
     const users = {
         7: {id: 7, firstName: 'Ada', lastName: 'Lovelace', hasImage: false},
@@ -130,6 +136,8 @@ window.fetch = async (url, init = {}) => {
     if (route(/^\/users$/, 'POST')) {
         const user = {...body, id: 40 + net2.created.length, hasImage: false};
         net2.created.push(user);
+        if (net2.deferCreate) await new Promise(resolve => { net2.finishCreate = resolve; });
+        if (net2.loseCreateReply) throw new TypeError('Lost creation reply');
         return reply(201, user);
     }
     if ((m = route(/^\/users\/(\d+)$/, 'GET'))) return users[m[1]] ? reply(200, users[m[1]]) : reply(404);
@@ -143,7 +151,12 @@ window.fetch = async (url, init = {}) => {
     // Cards: list, add, and mark lost.
     if ((m = route(/^\/users\/(\d+)\/tokens$/))) {
         const cards = net2.cards[m[1]] = net2.cards[m[1]] || [];
-        if (method === 'POST') { cards.push(body.tokenValue); return reply(201, body); }
+        if (method === 'POST') {
+            if (net2.deferCard) await new Promise(resolve => { net2.finishCard = resolve; });
+            cards.push(body.tokenValue);
+            if (net2.loseCardReply) throw new TypeError('Lost card reply');
+            return reply(201, body);
+        }
         return reply(200, cards.map((tokenValue, i) =>
             ({id: i + 1, tokenType: 'ProxCard', tokenValue, isLost: net2.lost.includes(tokenValue)})));
     }
@@ -412,14 +425,20 @@ def batch_assign_from_a_spreadsheet(b: Browser):
     b.click('batch-start')
     b.tap()
     b.wait_contains('batch-progress', '1 assigned')
+    b.wait('reader.led === 6')
     assert b.js("return !dispatchEvent(new Event('beforeunload', {cancelable: true}))"), 'unsaved work warns'
     time.sleep(.8)  # A held card must not go to the next people too.
     assert 'Jane Dawkins' in b.text('batch-prompt')
     b.lift()
+    b.wait('reader.led === 10')
+    signals = b.js('return reader.assignedSignals')
     b.tap()
     b.wait_contains('batch-notice', 'already belongs to John Doe')
+    assert b.js('return reader.led') == 10
+    assert b.js('return reader.assignedSignals') == signals
     b.tap('5B7D403B')
     b.wait_contains('batch-progress', '2 assigned')
+    b.wait('reader.led === 6')
     b.fits_desktop_and_phone('batch', 900, scroll_to='batch-session')
 
     # Paused, a tap changes nothing; skip, undo and skip again, then download.
@@ -430,6 +449,7 @@ def batch_assign_from_a_spreadsheet(b: Browser):
     b.click('batch-skip')
     b.wait_contains('batch-prompt', 'Queue complete')
     b.click('batch-undo')
+    b.wait('reader.led === 10')
     assert b.text('batch-prompt') == 'Next: Absent Student'
     b.click('batch-skip', 'batch-download')
     expected = [row.copy() for row in source_rows]
@@ -556,30 +576,47 @@ RESULTS = "[...document.querySelectorAll('#people-rows td:last-child > span')].m
 OFFERED = "[...document.querySelectorAll('#people-rows .anyway')].map(label => !label.hidden)"
 
 
+def warns_before_leaving(b: Browser) -> bool:
+    return b.js("""
+        const event = new Event('beforeunload', {cancelable: true});
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+    """)
+
+
 def adding_people(b: Browser):
     b.js("location.hash = 'people'")
     b.shown('people-tool')
     assert b.js("return $('people-signin').hidden"), 'signed in already'
     b.upload('people-file', 'people.csv', csv_text([
-        ['Forename', 'Surname', 'Dept', 'Access level', 'Expiry', 'Admission number', 'Photo'],
-        ['Riya', 'Patel', 'year 7', 'working hours; Car park', '31/07/2027', 'A1', r'C:\photos\Riya.PNG'],
-        ['Ada', 'Lovelace', '', '', '', '', ''],
-        ['Tom', 'Hall', 'Year 9', '', '', '', ''],
-        ['Sam', 'Lee', '', '', '', '', 'sam.jpg'],
-        ['Kim', 'Wu', '', '', '07/31/2027', '', ''],
-        ['riya', 'PATEL', '', '', '', '', ''],
-        ['Zoe', 'King', '', 'Night shift', '', '', ''],
+        ['Forename', 'Surname', 'Dept', 'Access level', 'Expiry', 'Admission number', 'Photo', 'Active'],
+        ['Riya', 'Patel', 'year 7', 'working hours; Car park', '31/07/2027', 'A1', r'C:\photos\Riya.PNG', '16/10/2026'],
+        ['Ada', 'Lovelace', '', '', '', '', '', ''],
+        ['Tom', 'Hall', 'Year 9', '', '', '', '', ''],
+        ['Sam', 'Lee', '', '', '', '', 'sam.jpg', ''],
+        ['Kim', 'Wu', '', '', '07/31/2027', '', '', ''],
+        ['riya', 'PATEL', '', '', '', '', '', ''],
+        ['Zoe', 'King', '', 'Night shift', '', '', '', ''],
     ]))
     b.wait("document.querySelectorAll('#people-rows tr').length === 7")
+    assert b.js("return $('people-results').disabled")
+    assert not warns_before_leaving(b)
     # Net2's own name for custom field 14 is what the column matched.
     pickers = "document.querySelectorAll('#people-map select')"
     assert b.js("return [...document.querySelectorAll('#people-map label')].at(-1).textContent").startswith('Admission number')
     assert b.js(f'return {pickers}[13].value') == '5'
     assert b.js(f'return {pickers}[1].selectedOptions[0].textContent') == 'Not used'
+    assert b.js(f'return {pickers}[5].value') == ''
+    b.js(f"{pickers}[5].value = '7'; {pickers}[5].dispatchEvent(new Event('change', {{bubbles: true}}))")
+    preview = "[...document.querySelector('#people-rows tr').children].map(td => td.textContent)"
+    assert b.js(f'return {preview}')[3:6] == ['working hours; Car park', '16/10/2026', '31/07/2027']
 
     b.choose_files('people-photos', "[[png, 'riya.png']]")
     b.click('people-check')
     b.wait_starts('people-notice', 'Checked: 1 ready, 6 held back')
+    assert b.js(f'return {preview}')[3:6] == ['Working hours; Car park', '2026-10-16', '2027-07-31']
+    assert b.js("return [...document.querySelector('#people-rows tr:nth-child(2)').children].slice(3, 6).map(td => td.textContent)") == ['', '', '']
+    assert b.js("return document.querySelector('#people-rows tr:nth-child(5) td:nth-child(6)').textContent") == '07/31/2027'
     results = b.js(f'return {RESULTS}')
     assert results[4].startswith('Expiration date:'), results
     assert results == [
@@ -608,6 +645,7 @@ def adding_people(b: Browser):
     assert b.js('return net2.created[0]') == {
         'firstName': 'Riya', 'middleName': '', 'lastName': 'Patel', 'isAlarmUser': False,
         'expiryDate': '2027-07-31T23:59:00', 'customFields': [{'id': 14, 'value': 'A1'}],
+        'activateDate': '2026-10-16T00:00:00',
         'id': 40, 'hasImage': False,
     }
     # Then her department, access levels and portrait, in that order.
@@ -623,6 +661,14 @@ def adding_people(b: Browser):
     b.click('people-download')
     people_back = b.downloaded('people-net2.csv')
     assert [row[-1] for row in people_back[:4]] == ['User ID', '40', '41', ''], people_back
+    assert warns_before_leaving(b), 'the reimport CSV omits outcome messages'
+    b.click('people-results')
+    assert b.downloaded('people-results.csv') == [
+        ['Sheet row', 'Name', 'User ID', 'Result'],
+        ['2', 'Riya Patel', '40', 'Added as user 40.'],
+        ['3', 'Ada Lovelace', '41', 'Added as user 41.'],
+    ]
+    assert not warns_before_leaving(b)
 
     # Run again from the download: nobody is added twice, and the repeated
     # Riya now matches the one just added.
@@ -635,6 +681,74 @@ def adding_people(b: Browser):
     assert results[5] == 'Same name as user 40 in Net2.', results
     assert b.js(f'return {OFFERED}')[:2] == [False, False]
     assert b.js("return $('people-create').disabled")
+
+
+def keeping_people_import_results(b: Browser):
+    sheet = [['First name', 'Surname', 'Department', 'Access level', 'PIN'],
+             ['Mary', 'Hall', 'Year 7', 'Working hours', '9876']]
+    b.upload('people-file', 'partial.csv', csv_text(sheet))
+    b.click('people-check')
+    b.wait_starts('people-notice', 'Checked: 1 ready')
+    b.js("net2.failPath = '/users/42/doorpermissionset'; net2.deferCreate = true")
+    b.click('people-create')
+    b.wait('!!net2.finishCreate')
+    assert warns_before_leaving(b), 'protect the import before Net2 replies'
+    assert b.js("return $('people-file').disabled && $('people-create').disabled && $('people-results').disabled")
+    b.js('delete net2.deferCreate; net2.finishCreate(); delete net2.finishCreate')
+    b.wait_starts('people-notice', 'Done. 1 of 1 added')
+    result = b.js(f'return {RESULTS}[0]')
+    assert 'No access levels:' in result and 'Test failure' in result, result
+    assert warns_before_leaving(b)
+    assert '9876' not in b.text('people-rows'), 'PINs are not previewed'
+
+    b.js('window.asked = []; window.confirm = question => (asked.push(question), false)')
+    b.upload('people-file', 'replacement.csv', csv_text(sheet))
+    b.wait_starts('people-notice', 'Kept the current sheet')
+    assert len(b.js('return asked')) == 1
+    assert b.js(f'return {RESULTS}[0]') == result
+    assert warns_before_leaving(b)
+    # Checking again must not overwrite the recorded creation outcome.
+    b.click('people-check')
+    b.wait_starts('people-notice', 'Checked: 0 ready')
+    b.click('people-results')
+    assert b.downloaded('partial-results.csv') == [
+        ['Sheet row', 'Name', 'User ID', 'Result'], ['2', 'Mary Hall', '42', result],
+    ], 'report contains outcomes, without PINs or other source columns'
+    assert not warns_before_leaving(b)
+    b.fits_desktop_and_phone('people-results', 1400)
+
+    # Net2 creates the user but its response is lost: no ID, no automatic retry.
+    b.js('window.confirm = () => true; delete net2.failPath; net2.loseCreateReply = true')
+    b.upload('people-file', 'uncertain.csv', csv_text([
+        ['First name', 'Surname'], ['Eve', 'Young'], ['Not', 'Attempted'],
+    ]))
+    b.click('people-check')
+    b.wait_starts('people-notice', 'Checked: 2 ready')
+    b.click('people-create')
+    b.wait_starts('people-notice', 'Stopped. 0 of 2 added')
+    assert b.js('return net2.created.length') == 4
+    assert b.js("return $('people-download').disabled && !$('people-results').disabled")
+    assert warns_before_leaving(b)
+    uncertain = b.js(f'return {RESULTS}[0]')
+    b.click('people-results')
+    assert b.downloaded('uncertain-results.csv') == [
+        ['Sheet row', 'Name', 'User ID', 'Result'], ['2', 'Eve Young', '', uncertain],
+    ]
+    assert not warns_before_leaving(b)
+
+    # A failed download must leave the warning in place; accepting replacement clears it.
+    b.js('delete net2.loseCreateReply')
+    b.click('people-create')
+    b.wait_starts('people-notice', 'Done. 1 of 1 added')
+    b.js("window.realObjectURL = URL.createObjectURL; URL.createObjectURL = () => { throw Error('Download failed'); }")
+    b.click('people-results')
+    b.wait_text('people-notice', 'Could not create a download link.')
+    assert warns_before_leaving(b)
+    b.js('URL.createObjectURL = realObjectURL; window.asked = []; window.confirm = question => (asked.push(question), true)')
+    b.upload('people-file', 'replacement.csv', csv_text(sheet))
+    assert len(b.js('return asked')) == 1
+    assert not warns_before_leaving(b)
+    assert b.js("return $('people-results').disabled")
 
 
 def saving_cards_straight_to_net2(b: Browser):
@@ -667,10 +781,16 @@ def saving_cards_straight_to_net2(b: Browser):
     b.lift()
     b.tap()
     b.wait_contains('batch-notice', 'Jane Doe already has card 11111111')
+    b.wait('reader.led === 10')
     assert 'John Roe' in b.text('batch-prompt')
     b.lift()
+    b.js('net2.deferCard = true')
     b.tap()
+    b.wait('!!net2.finishCard')
+    assert b.js('return reader.led') == 10, 'pending saves do not signal success'
+    b.js('delete net2.deferCard; net2.finishCard(); delete net2.finishCard')
     b.wait_contains('batch-progress', '1 assigned')
+    b.wait('reader.led === 6')
     assert b.js('return net2.cards[12]') == ['34935100']
     posted = b.js("return net2.calls.filter(c => c.method === 'POST' && c.path.startsWith('/users/')).map(c => c.body)")
     assert posted == [{'tokenType': 'Keyfob', 'tokenValue': '34935100', 'isLost': False}]
@@ -724,6 +844,35 @@ def looking_up_who_holds_a_card(b: Browser):
     assert b.js("return net2.calls.every(c => c.path === '/authorization/tokens' || c.auth === 'Bearer T0K' || c.auth === 'Bearer T1K')")
 
 
+def reader_feedback_waits_for_the_saved_card(b: Browser):
+    b.js("location.hash = 'batch'; $('batch-retire').checked = false")
+    b.shown('batch-tool')
+    b.click('batch-load')
+    b.wait_text('batch-prompt', 'Next: Jane Doe')
+    b.click('batch-start')
+    b.lift()
+    b.wait('reader.led === 10')
+    signals = b.js('return reader.assignedSignals')
+    b.js('net2.deferCard = true')
+    b.tap('5B7D4060')
+    b.wait('!!net2.finishCard')
+    b.lift()
+    b.js('delete net2.deferCard; net2.finishCard(); delete net2.finishCard')
+    b.wait_contains('batch-progress', '1 assigned')
+    time.sleep(.4)
+    assert b.js('return reader.led') == 10, 'a late save must not light an empty reader'
+    assert b.js('return reader.assignedSignals') == signals
+
+    b.js('net2.loseCardReply = true')
+    b.tap('5B7D4061')
+    b.wait_contains('batch-notice', 'Paused.')
+    time.sleep(.4)
+    assert b.js('return reader.led') == 10, 'uncertain writes do not signal success'
+    assert b.js('return reader.assignedSignals') == signals
+    assert b.js("return $('batch-start').disabled"), 'uncertain outcomes need reconciliation'
+    b.js('delete net2.loseCardReply')
+
+
 def unplugging_and_browsers_without_webhid(b: Browser):
     b.js('reader.unplugged = true; reader.opened = false')
     b.wait_starts('message', 'Reader unplugged')
@@ -741,9 +890,11 @@ SCENARIOS = [
     signing_in_to_net2,
     uploading_portraits,
     adding_people,
+    keeping_people_import_results,
     saving_cards_straight_to_net2,
     reissuing_marks_old_cards_lost,
     looking_up_who_holds_a_card,
+    reader_feedback_waits_for_the_saved_card,
     unplugging_and_browsers_without_webhid,
 ]
 

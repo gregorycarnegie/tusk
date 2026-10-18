@@ -592,6 +592,10 @@ async fn people_tool() -> topcoat::Result<impl View> {
                 <div id="people-list" class="review panel" hidden="">
                     <div class="review-head">
                         <h2>"New people"</h2>
+                        <button id="people-results" class="secondary small">
+                            download_icon()
+                            "Download results"
+                        </button>
                         <button id="people-download" class="primary small">
                             download_icon()
                             "Download with User IDs"
@@ -609,6 +613,9 @@ async fn people_tool() -> topcoat::Result<impl View> {
                                     <th scope="col">"Row"</th>
                                     <th scope="col">"Name"</th>
                                     <th scope="col">"Department"</th>
+                                    <th scope="col">"Access levels"</th>
+                                    <th scope="col">"Active from"</th>
+                                    <th scope="col">"Expires"</th>
                                     <th scope="col">"Photo"</th>
                                     <th scope="col">"Result"</th>
                                 </tr>
@@ -617,7 +624,7 @@ async fn people_tool() -> topcoat::Result<impl View> {
                         </table>
                     </div>
                     <p class="hint review-foot">
-                        "Anyone whose first name and surname Net2 or an earlier row already has is held back until you tick Add anyway. A row with a User ID is never added: keep the download, and running it again adds nobody twice."
+                        "Check access levels and dates before adding. After checking, dates are shown as year-month-day; activation starts at 00:00 and expiry is at 23:59. Blank dates send no date to Net2. Anyone whose first name and surname Net2 or an earlier row already has is held back until you tick Add anyway. A row with a User ID is never added: keep the download, and running it again adds nobody twice. Download results to keep each attempt’s User ID and outcome, including failures. Results stay in this tab until you close it or replace the sheet."
                     </p>
                 </div>
                 <div class="empty-state">

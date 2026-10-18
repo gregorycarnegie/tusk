@@ -181,6 +181,7 @@ pub fn write_csv(
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use googletest::prelude::{anything, assert_that, err};
     use rstest::rstest;
 
     fn strings(row: &[&str]) -> Vec<String> {
@@ -252,7 +253,7 @@ mod tests {
             "the blank last row is dropped"
         );
         assert!(sheet.bom);
-        assert!(read("x.xlsx", b"PK\x03\x04 not really").is_err());
+        assert_that!(read("x.xlsx", b"PK\x03\x04 not really"), err(anything()));
     }
 
     #[test]
@@ -268,11 +269,11 @@ mod tests {
             read("p.csv", b"A,B\n1\n").unwrap_err(),
             "Row 2 does not match the header columns."
         );
-        assert!(read("p.csv", b"A,B\n1,2,3\n").is_err());
-        assert!(read("p.csv", &[0xff]).is_err());
+        assert_that!(read("p.csv", b"A,B\n1,2,3\n"), err(anything()));
+        assert_that!(read("p.csv", &[0xff]), err(anything()));
         let rows = |n: usize| read("p.csv", format!("A\n{}", "x\n".repeat(n)).as_bytes());
         assert_eq!(rows(MAX_ROWS).unwrap().rows.len(), MAX_ROWS);
-        assert!(rows(MAX_ROWS + 1).is_err());
+        assert_that!(rows(MAX_ROWS + 1), err(anything()));
     }
 
     #[rstest]

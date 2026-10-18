@@ -10,8 +10,8 @@ use web_sys::{HidDevice, HidInputReportEvent};
 use crate::{
     batch::Batch,
     protocol::{
-        ACK, ADDR, INIT, LEDS_ARG, NO_MIFARE, NO_TOKEN, OP_LEDS, OP_READ_MIFARE, REPORT_BYTES,
-        frame, is_read_reply, parse,
+        ACK, ADDR, INIT, LEDS_ARG, LEDS_ASSIGNED, NO_MIFARE, NO_TOKEN, OP_LEDS, OP_READ_MIFARE,
+        REPORT_BYTES, frame, is_read_reply, parse,
     },
     token::{Token, token},
 };
@@ -117,6 +117,15 @@ impl State {
         (self.on_change)(self);
     }
 
+    /// Light the reader for a card that was just given to someone.
+    pub fn assigned_leds(&self) -> bool {
+        self.status.0 == Tone::Ready
+            && self
+                .batch
+                .as_ref()
+                .is_some_and(|batch| batch.signals(self.card.as_ref()))
+    }
+
     pub fn show(&mut self, card: Option<Token>) {
         if self.card != card {
             if let Some(batch) = &mut self.batch {
@@ -170,8 +179,8 @@ async fn send(dev: &HidDevice, mut buf: [u8; REPORT_BYTES]) -> Result<(), JsValu
 
 /// Ask the reader for a Mifare card. The answer arrives separately, as an
 /// input report.
-async fn poll_once(dev: &HidDevice) -> Result<(), JsValue> {
-    send(dev, frame(ADDR, OP_LEDS, &[LEDS_ARG])).await?;
+async fn poll_once(dev: &HidDevice, leds: u8) -> Result<(), JsValue> {
+    send(dev, frame(ADDR, OP_LEDS, &[leds])).await?;
     send(dev, frame(ADDR, OP_READ_MIFARE, &[])).await
 }
 
@@ -286,7 +295,15 @@ pub async fn run(dev: HidDevice, state: Rc<RefCell<State>>) {
         sleep(40).await;
     }
 
-    while owned() && poll_once(&dev).await.is_ok() {
+    while owned() {
+        let leds = if state.borrow().assigned_leds() {
+            LEDS_ASSIGNED
+        } else {
+            LEDS_ARG
+        };
+        if poll_once(&dev, leds).await.is_err() {
+            break;
+        }
         sleep(POLL_MS).await;
         // the reply lands during the sleep and resets this
         if !owned() {
