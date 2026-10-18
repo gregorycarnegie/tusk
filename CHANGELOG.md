@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   kept working. The result said so, but the card stayed live until it was
   marked lost by hand. Checked on a real Net2: the old card now shows as lost and is refused at a
   door.
+- A department made in Net2 after signing in now appears in Batch assign's
+  Department list as soon as you come back to the page, instead of only
+  after signing in again.
 
 ## [0.5.0-beta.2] - 2026-10-18
 

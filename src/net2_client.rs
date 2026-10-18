@@ -414,9 +414,19 @@ async fn connect(state: Rc<RefCell<State>>) {
         crate::client::render(&state);
     }
     element("net2-panel").hide_popover().ok();
-    // Departments only narrow the list; without them, All users still works.
+    load_departments(state).await;
+}
+
+/// Departments only narrow the list; without them, All users still works.
+/// Read again whenever the page regains focus, so one just made in Net2
+/// shows up without signing in again. The choice survives if it still exists.
+async fn load_departments(state: Rc<RefCell<State>>) {
+    if state.borrow().net2.is_none() {
+        return;
+    }
     if let Ok(reply) = call(&state, "GET", "/departments", None).await {
-        let list = element("batch-department");
+        let list = element("batch-department").unchecked_into::<HtmlSelectElement>();
+        let chosen = list.value();
         list.set_inner_html("<option value=\"\">All users</option>");
         let document = web_sys::window().unwrap().document().unwrap();
         for (id, name) in read_named(&reply) {
@@ -424,6 +434,10 @@ async fn connect(state: Rc<RefCell<State>>) {
             option.set_attribute("value", &id.to_string()).unwrap();
             option.set_text_content(Some(&name));
             list.append_child(&option).unwrap();
+        }
+        list.set_value(&chosen);
+        if list.selected_index() < 0 {
+            list.set_value("");
         }
     }
 }
@@ -502,6 +516,14 @@ pub fn setup(state: Rc<RefCell<State>>) {
         spawn_local(connect(submit_state.clone()));
     });
     element("net2-form").set_onsubmit(Some(callback.as_ref().unchecked_ref()));
+    callback.forget();
+    let focus_state = state.clone();
+    let callback = Closure::<dyn FnMut()>::new(move || {
+        spawn_local(load_departments(focus_state.clone()));
+    });
+    web_sys::window()
+        .unwrap()
+        .set_onfocus(Some(callback.as_ref().unchecked_ref()));
     callback.forget();
 
     let disconnect_state = state.clone();

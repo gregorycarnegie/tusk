@@ -88,6 +88,7 @@ FAKE_NET2 = r"""
 window.net2 = {
     calls: [], queries: [], token: 'T0K',
     cards: {8: ['11111111']}, lost: [], images: {}, created: [],
+    departments: [{id: 3, name: 'Year 7'}],
 };
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init = {}) => {
@@ -126,7 +127,7 @@ window.fetch = async (url, init = {}) => {
     let m;
 
     // Lists.
-    if (path === '/departments') return reply(200, [{id: 3, name: 'Year 7'}]);
+    if (path === '/departments') return reply(200, net2.departments);
     if (path === '/departments/3/users') return reply(200, [users[8], users[9], users[12]]);
     if (path === '/accesslevels') return reply(200, [{id: 2, name: 'Car park'}, {id: 1, name: 'Working hours'}]);
     if (path === '/users/customfieldnames') return reply(200, [{id: 14, name: 'Admission number', maxLength: 50}]);
@@ -764,6 +765,14 @@ def saving_cards_straight_to_net2(b: Browser):
     assert b.js("return $('batch-token-type').value") == 'ProxIsoCardWithoutMagstripe'
     b.js("$('batch-token-type').value = 'Keyfob'; $('batch-token-type').dispatchEvent(new Event('change'))")
     assert b.js("return localStorage.getItem('batch-token-type')") == 'Keyfob'
+
+    # A department made in Net2 after signing in appears when the page
+    # regains focus, and the one already chosen stays chosen.
+    b.js("""$('batch-department').value = '3';
+            net2.departments.push({id: 4, name: 'Tusk test'});
+            dispatchEvent(new Event('focus'));""")
+    b.wait("document.querySelectorAll('#batch-department option').length === 3")
+    assert b.js("return $('batch-department').value") == '3'
 
     # Net2 expires the session; loading renews it once and carries on.
     b.js("""net2.token = 'EXPIRED';
