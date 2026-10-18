@@ -384,15 +384,20 @@ pub fn lost_tokens(body: &str, keep: &str) -> Result<Vec<(i64, String, Value)>, 
         .iter()
         .filter(|token| text(token, "tokenValue") != keep)
         .map(|token| {
-            let id = field(token, "id").and_then(Value::as_i64);
+            let id = field(token, "id")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| UNEXPECTED.to_string())?;
             let value = text(token, "tokenValue");
+            // Net2 refuses a PUT whose body has no id, or one that is not the
+            // token in the path: "Id of the token must match the token you
+            // are updating." Found on a real Net2, 2026-10-18.
             let body = serde_json::json!({
+                "id": id,
                 "tokenType": text(token, "tokenType"),
                 "tokenValue": value,
                 "isLost": true,
             });
-            id.map(|id| (id, value, body))
-                .ok_or_else(|| UNEXPECTED.to_string())
+            Ok((id, value, body))
         })
         .collect()
 }
@@ -614,12 +619,12 @@ mod tests {
                 (
                     4,
                     "111".into(),
-                    serde_json::json!({"tokenType":"ProxCard","tokenValue":"111","isLost":true})
+                    serde_json::json!({"id":4,"tokenType":"ProxCard","tokenValue":"111","isLost":true})
                 ),
                 (
                     5,
                     "222".into(),
-                    serde_json::json!({"tokenType":"Keyfob","tokenValue":"222","isLost":true})
+                    serde_json::json!({"id":5,"tokenType":"Keyfob","tokenValue":"222","isLost":true})
                 ),
             ]
         );

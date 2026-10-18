@@ -161,6 +161,10 @@ window.fetch = async (url, init = {}) => {
             ({id: i + 1, tokenType: 'ProxCard', tokenValue, isLost: net2.lost.includes(tokenValue)})));
     }
     if ((m = route(/^\/users\/(\d+)\/tokens\/(\d+)$/, 'PUT'))) {
+        // As the real Net2 does: the body must name the token in the path.
+        if (body.id !== Number(m[2])) {
+            return reply(400, {message: 'Id of the token must match the token you are updating'});
+        }
         if (body.isLost) net2.lost.push(net2.cards[m[1]][m[2] - 1]);
         return reply(200, body);
     }
@@ -821,7 +825,7 @@ def reissuing_marks_old_cards_lost(b: Browser):
     assert b.js('return net2.lost') == ['11111111']
     writes = b.js("return net2.calls.filter(c => c.method !== 'GET' && c.path.startsWith('/users/8/')).map(c => [c.method, c.path, c.body])")
     assert [w[:2] for w in writes] == [['POST', '/users/8/tokens'], ['PUT', '/users/8/tokens/1']], writes
-    assert writes[1][2] == {'tokenType': 'ProxCard', 'tokenValue': '11111111', 'isLost': True}, writes
+    assert writes[1][2] == {'id': 1, 'tokenType': 'ProxCard', 'tokenValue': '11111111', 'isLost': True}, writes
     assert 'John Roe' in b.text('batch-prompt')
 
 

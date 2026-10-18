@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Mark their old cards lost** did nothing on a real Net2: the request left
+  out the card's ID, which Net2 requires, so Net2 refused it and the old card
+  kept working. The result said so, but the card stayed live until it was
+  marked lost by hand. Checked on a real Net2: the old card now shows as lost.
+
 ## [0.5.0-beta.2] - 2026-10-18
 
 ### Added
