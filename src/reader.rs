@@ -117,13 +117,13 @@ impl State {
         (self.on_change)(self);
     }
 
-    /// Light the reader for a card that was just given to someone.
-    pub fn assigned_leds(&self) -> bool {
+    /// Light the reader once for a card that was just given to someone.
+    pub fn take_assigned_leds(&mut self) -> bool {
         self.status.0 == Tone::Ready
             && self
                 .batch
-                .as_ref()
-                .is_some_and(|batch| batch.signals(self.card.as_ref()))
+                .as_mut()
+                .is_some_and(|batch| batch.take_signal(self.card.as_ref()))
     }
 
     pub fn show(&mut self, card: Option<Token>) {
@@ -296,7 +296,7 @@ pub async fn run(dev: HidDevice, state: Rc<RefCell<State>>) {
     }
 
     while owned() {
-        let leds = if state.borrow().assigned_leds() {
+        let leds = if state.borrow_mut().take_assigned_leds() {
             LEDS_ASSIGNED
         } else {
             LEDS_ARG

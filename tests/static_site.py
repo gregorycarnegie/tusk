@@ -430,10 +430,12 @@ def batch_assign_from_a_spreadsheet(b: Browser):
     b.click('batch-start')
     b.tap()
     b.wait_contains('batch-progress', '1 assigned')
-    b.wait('reader.led === 6')
+    b.wait('reader.assignedSignals === 1')
     assert b.js("return !dispatchEvent(new Event('beforeunload', {cancelable: true}))"), 'unsaved work warns'
     time.sleep(.8)  # A held card must not go to the next people too.
     assert 'Jane Dawkins' in b.text('batch-prompt')
+    # Once, as Net2 does: repeated, the real reader stayed lit for minutes.
+    assert b.js('return reader.assignedSignals') == 1 and b.js('return reader.led') == 10
     b.lift()
     b.wait('reader.led === 10')
     signals = b.js('return reader.assignedSignals')
@@ -443,7 +445,7 @@ def batch_assign_from_a_spreadsheet(b: Browser):
     assert b.js('return reader.assignedSignals') == signals
     b.tap('5B7D403B')
     b.wait_contains('batch-progress', '2 assigned')
-    b.wait('reader.led === 6')
+    b.wait(f'reader.assignedSignals === {signals + 1}')
     b.fits_desktop_and_phone('batch', 900, scroll_to='batch-session')
 
     # Paused, a tap changes nothing; skip, undo and skip again, then download.
@@ -801,9 +803,10 @@ def saving_cards_straight_to_net2(b: Browser):
     b.tap()
     b.wait('!!net2.finishCard')
     assert b.js('return reader.led') == 10, 'pending saves do not signal success'
+    signals = b.js('return reader.assignedSignals')
     b.js('delete net2.deferCard; net2.finishCard(); delete net2.finishCard')
     b.wait_contains('batch-progress', '1 assigned')
-    b.wait('reader.led === 6')
+    b.wait(f'reader.assignedSignals === {signals + 1}')
     assert b.js('return net2.cards[12]') == ['34935100']
     posted = b.js("return net2.calls.filter(c => c.method === 'POST' && c.path.startsWith('/users/')).map(c => c.body)")
     assert posted == [{'tokenType': 'Keyfob', 'tokenValue': '34935100', 'isLost': False}]

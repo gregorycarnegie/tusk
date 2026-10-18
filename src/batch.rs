@@ -214,6 +214,17 @@ impl Batch {
         card.is_some_and(|card| self.signal.as_ref() == Some(&card.hex))
     }
 
+    /// Like `signals`, but only once per assignment. Net2 sends its
+    /// token-found LEDs once and idle on every poll after, even with the card
+    /// still held; sent on every poll, the reader stayed lit for minutes.
+    pub fn take_signal(&mut self, card: Option<&Token>) -> bool {
+        let signals = self.signals(card);
+        if signals {
+            self.signal = None;
+        }
+        signals
+    }
+
     /// A card saved to Net2 can only be removed in Net2.
     pub fn can_undo(&self) -> bool {
         self.sending.is_none()
@@ -587,7 +598,11 @@ Poe,Jim,
         batch.observe(Some(&card(1)));
         assert!(!batch.signals(Some(&card(1))), "not until Net2 accepts it");
         batch.saved();
-        assert!(batch.signals(Some(&card(1))));
+        assert!(batch.take_signal(Some(&card(1))));
+        assert!(
+            !batch.take_signal(Some(&card(1))),
+            "once, however long it is held"
+        );
         batch.observe(None);
         batch.observe(Some(&card(2)));
         batch.observe(None);

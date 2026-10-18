@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   kept working. The result said so, but the card stayed live until it was
   marked lost by hand. Checked on a real Net2: the old card now shows as lost and is refused at a
   door.
+- The reader's amber light after a saved card could stay lit for minutes
+  after the card was lifted: Tusk repeated the token-found LED command on
+  every poll while the card was held. It now sends it once, as Net2 does
+  (from net2.pcap). Checked on a real reader saving to a real Net2: the light
+  comes on with the saved card, not a refused one, and goes off as it is
+  lifted.
 - A department made in Net2 after signing in now appears in Batch assign's
   Department list as soon as you come back to the page, instead of only
   after signing in again.

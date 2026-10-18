@@ -97,12 +97,13 @@ Open **Batch assign cards** (or `/#batch` locally and `/tusk/#batch` on Pages).
 4. Press **Start / resume**, then tap the named person's card. Wait for the
    assignment to appear before moving to the next card. A held card is accepted
    once; cards already used elsewhere in the batch are refused.
-   The reader switches to its token-found LED state after an assignment
-   succeeds, and returns to idle when the card is lifted. For cards saved
+   The reader shows its token-found LED once after an assignment succeeds,
+   as Net2 does. For cards saved
    directly to Net2, it waits for Net2 to confirm the save. This feedback has
-   been checked on a real Paxton reader with a local CSV assignment: the LED
-   changed on success, reading continued while the card was held, and lifting
-   it restored idle. Waiting for Net2 confirmation is covered by stand-in tests.
+   been checked on a real Paxton reader, with a local CSV assignment and with
+   cards saved to a real Net2: the LED changed once Net2 confirmed the save,
+   not when Net2 refused the card, and went back to idle as soon as the card
+   was lifted, even after holding it for several seconds.
 5. Use **Skip person** for an absent student, **Undo last step** to correct a
    mistake, and **Download CSV** to save the result for Net2's import wizard.
 
