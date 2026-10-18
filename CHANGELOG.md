@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mark their old cards lost** did nothing on a real Net2: the request left
   out the card's ID, which Net2 requires, so Net2 refused it and the old card
   kept working. The result said so, but the card stayed live until it was
-  marked lost by hand. Checked on a real Net2: the old card now shows as lost.
+  marked lost by hand. Checked on a real Net2: the old card now shows as lost and is refused at a
+  door.
 
 ## [0.5.0-beta.2] - 2026-10-18
 
@@ -47,7 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   download is the sheet with each new User ID filled in, so running it again
   adds nobody twice. Checked on a real Net2 with one person: `POST /users`,
   the department and access level `PUT`s, and the portrait upload. The
-  expiry time (end of the day, 23:59) is not yet checked on a real Net2.
+  expiry date was later checked on a real Net2 too: it arrives on the right
+  day and survives the department and access level `PUT`s. Its time (end of
+  the day, 23:59) is not yet checked.
 - Spreadsheets as well as CSV: Batch assign and Add people read tab-separated
   text and the first sheet of an Excel (xlsx, xlsm, xlsb, xls) or
   OpenDocument (ods) workbook, with [calamine](https://crates.io/crates/calamine).

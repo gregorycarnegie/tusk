@@ -194,9 +194,10 @@ if results have not been downloaded. Downloading results clears that warning.
 **Download with User IDs** saves the sheet with each new person's User ID
 filled in; load that file again and nobody is added twice. Then give out cards with **People already in
 Net2** under **Batch assign cards**. Adding people is tested on a real Net2:
-the person, their department, access level and portrait all arrived. Expiry
-dates have only been tested against a stand-in for Net2 so far, so check the
-first few in Net2 if you set them.
+the person, their department, access level and portrait all arrived. An expiry
+date arrives on the right day, and the department and access level set after
+it leave it in place. That it runs to 23:59 rather than midnight is not yet
+checked on a real Net2, so check the first few if the time matters.
 
 **Card holder.** Once signed in, every card you tap on **Read a card** shows
 who holds it in Net2, with their user ID and
@@ -218,15 +219,14 @@ hand. People whose Net2 access has expired are listed as **Expired** and left
 out of the queue. Saved cards cannot be undone from Tusk; remove them in Net2.
 **Download CSV** still gives you a record with each person's Net2 user ID.
 
-Session renewal and expiry dates are tested on a real Net2. Marking old cards
-lost has only been tested against a stand-in for Net2 so far. Check the first few in Net2,
-including that a card marked lost is refused at a door.
+Session renewal, expiry dates and marking old cards lost are tested on a real
+Net2: the old card showed as lost in Net2 and was refused at a door.
 
 Choose the **Card type** Net2 should record, as in Net2's Change token type
 dialog. It defaults to Proximity ISO card no magstripe, and the browser
 remembers your choice. Net2's "Dual credential" type is not offered: the API
-has no name for it. A real Net2 upload of either kind has not yet been tried,
-so check the first few in Net2.
+has no name for it. Tested on a real Net2 with the default and with Keyfob:
+Net2 recorded each as chosen.
 
 ### Trusting the Net2 certificate
 
