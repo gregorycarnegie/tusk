@@ -54,7 +54,7 @@ out was most of this project; [PROTOCOL.md](PROTOCOL.md) is the write-up.
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.129 --locked
+cargo install wasm-bindgen-cli --version 0.2.130 --locked
 ```
 
 ## Running

@@ -17,7 +17,6 @@ pub fn render() -> topcoat::Result<String> {
 
 fn page(cx: &Cx) -> impl View {
     view! {
-        cx =>
         <!DOCTYPE html>
         <html lang="en">
             <head>
@@ -258,7 +257,7 @@ fn page(cx: &Cx) -> impl View {
 }
 
 #[component]
-async fn batch_tool() -> topcoat::Result<impl View> {
+async fn batch_tool(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <section
             id="batch-tool"
@@ -443,7 +442,7 @@ async fn batch_tool() -> topcoat::Result<impl View> {
 /// Sign-in lives in a popover, so it opens from any tab and keeps the page
 /// underneath as it was.
 #[component]
-async fn net2_panel() -> topcoat::Result<impl View> {
+async fn net2_panel(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <section
             id="net2-panel"
@@ -519,7 +518,7 @@ async fn net2_panel() -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn people_tool() -> topcoat::Result<impl View> {
+async fn people_tool(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <section
             id="people-tool"
@@ -640,7 +639,7 @@ async fn people_tool() -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn portrait_tool() -> topcoat::Result<impl View> {
+async fn portrait_tool(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <section
             id="portrait-tool"
@@ -724,7 +723,7 @@ async fn portrait_tool() -> topcoat::Result<impl View> {
 /// around the edge and the chip die bonded to its ends. A contactless card has
 /// no contact pad on its face; that gold square belongs to bank cards.
 #[component]
-async fn antenna_art() -> topcoat::Result<impl View> {
+async fn antenna_art(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg
             class="antenna"
@@ -748,7 +747,7 @@ async fn antenna_art() -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn contactless_icon() -> topcoat::Result<impl View> {
+async fn contactless_icon(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg
             class="contactless"
@@ -767,7 +766,7 @@ async fn contactless_icon() -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn card_icon() -> topcoat::Result<impl View> {
+async fn card_icon(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg
             viewBox="0 0 24 24"
@@ -785,7 +784,7 @@ async fn card_icon() -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn stack_icon() -> topcoat::Result<impl View> {
+async fn stack_icon(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg
             viewBox="0 0 24 24"
@@ -803,7 +802,7 @@ async fn stack_icon() -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn face_icon() -> topcoat::Result<impl View> {
+async fn face_icon(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg
             viewBox="0 0 24 24"
@@ -822,7 +821,7 @@ async fn face_icon() -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn person_add_icon() -> topcoat::Result<impl View> {
+async fn person_add_icon(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg
             viewBox="0 0 24 24"
@@ -840,7 +839,7 @@ async fn person_add_icon() -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn upload_icon() -> topcoat::Result<impl View> {
+async fn upload_icon(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg
             class="drop-icon"
@@ -860,7 +859,7 @@ async fn upload_icon() -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn download_icon() -> topcoat::Result<impl View> {
+async fn download_icon(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg
             viewBox="0 0 24 24"
@@ -879,7 +878,7 @@ async fn download_icon() -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn close_icon() -> topcoat::Result<impl View> {
+async fn close_icon(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg
             viewBox="0 0 24 24"
@@ -895,7 +894,7 @@ async fn close_icon() -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn tusk_icon() -> topcoat::Result<impl View> {
+async fn tusk_icon(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
             <rect width="32" height="32" rx="9" fill="var(--brand)"></rect>
@@ -908,7 +907,7 @@ async fn tusk_icon() -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn github_icon() -> topcoat::Result<impl View> {
+async fn github_icon(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg viewBox="0 0 16 16" aria-hidden="true">
             <path
@@ -922,7 +921,7 @@ async fn github_icon() -> topcoat::Result<impl View> {
 /// Both glyphs are drawn; the stylesheet shows the moon in light mode and the
 /// sun in dark mode, so the button needs no state of its own.
 #[component]
-async fn theme_icon() -> topcoat::Result<impl View> {
+async fn theme_icon(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg
             viewBox="0 0 24 24"
@@ -945,7 +944,7 @@ async fn theme_icon() -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn copy_icon() -> topcoat::Result<impl View> {
+async fn copy_icon(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg
             viewBox="0 0 24 24"
@@ -963,7 +962,7 @@ async fn copy_icon() -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn check_icon() -> topcoat::Result<impl View> {
+async fn check_icon(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg
             viewBox="0 0 24 24"
