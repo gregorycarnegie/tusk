@@ -1,6 +1,6 @@
 //! Turning a read reply into the token number Net2 would show.
 
-use crate::protocol::{Reply, hex, is_read_reply};
+use crate::protocol::{Reply, hex};
 
 /// A Mifare card, the only kind of token this app reads.
 #[derive(Clone, PartialEq)]
@@ -13,19 +13,9 @@ pub struct Token {
 /// The token, if this reply is a read that found a card. An empty payload
 /// means the reader answered but there was nothing on it.
 pub fn token(reply: &Reply) -> Option<Token> {
-    if !is_read_reply(reply) {
-        return None;
-    }
-    let p = &reply.payload;
-    let end = p.iter().rposition(|b| *b != 0)? + 1;
-    // Mifare UIDs come in 4, 7 or 10 bytes, so one ending in 00 keeps its
-    // last byte rather than being cut at the zero padding
-    let len = [4, 7, 10].into_iter().find(|n| *n >= end).unwrap_or(end);
-    let uid = &p[..len];
-    // Net2 reads the first four bytes big-endian and keeps 8 digits
-    let number = u32::from_be_bytes(uid[..4].try_into().ok()?) % 100_000_000;
+    let (uid, number) = tusk_verified::token_data(reply)?;
     Some(Token {
-        hex: hex(uid),
+        hex: hex(&uid),
         number,
     })
 }
@@ -33,7 +23,9 @@ pub fn token(reply: &Reply) -> Option<Token> {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use crate::protocol::{ACK, ADDR, OP_READ_MIFARE, REAL_TOKEN_READ, frame, parse};
+    use crate::protocol::{
+        ACK, ADDR, OP_READ_MIFARE, REAL_TOKEN_READ, frame, is_read_reply, parse,
+    };
     use rstest::rstest;
 
     #[test]

@@ -84,6 +84,13 @@ frames in the host tests are for. What it does prove is the loop's own logic:
 when the card is shown and cleared, when the reader counts as gone, and that
 two connections never fight over it.
 
+## Formal verification
+
+The application calls the byte codec and token decoder in `tusk-verified`.
+Their Verus/`vstd` contracts are checked by the `verify` CI job. See
+[verified/README.md](verified/README.md) for the pinned tools, local command,
+proved properties and the parts of the application still outside the proofs.
+
 ## Testing against the hardware
 
 Two traps cost real time during development. Both are easy to fall into again.

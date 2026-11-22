@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0-beta.3] - 2026-11-22
+
 ### Added
 
+- Formal verification with Verus and `vstd` for the HID frame codec and token
+  decoder used by the application. Proofs cover frame layout, checksums,
+  malformed-input handling, XOR masking, round trips for supported opcodes,
+  UID padding and Net2's eight-digit token-number conversion. All 20 checks
+  pass with `--no-cheating`; pinned verification tools run in CI before the
+  site can deploy. Browser behavior, Net2 workflows and spreadsheet handling
+  remain outside the proofs; see [verification coverage](verified/README.md).
 - A **Manage** tab for people already in Net2. Show a department or all
   users, tick people, and **Move** them to another department, or **Mark as
   leavers**: their access ends at 23:59 on the day you choose and, if you
@@ -398,7 +407,8 @@ because each was a wrong assumption worth remembering:
   reports.
 - Tokens are assumed to be 4 to 8 bytes. Longer ones would be ignored.
 
-[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.2...HEAD
+[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.3...HEAD
+[0.5.0-beta.3]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.2...v0.5.0-beta.3
 [0.5.0-beta.2]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.1...v0.5.0-beta.2
 [0.5.0-beta.1]: https://github.com/gregorycarnegie/tusk/compare/v0.4.3...v0.5.0-beta.1
 [0.4.3]: https://github.com/gregorycarnegie/tusk/compare/v0.4.2...v0.4.3

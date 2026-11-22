@@ -18,6 +18,25 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.99.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: verus-0.2026.11.02.8bf68ee
+      # Keep this release and verified/Cargo.toml's vstd pin together.
+      - name: Install pinned Verus
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/verus.zip" \
+            https://github.com/verus-lang/verus/releases/download/release/0.2026.11.02.8bf68ee/verus-0.2026.11.02.8bf68ee-x86-linux.zip
+          echo "f3a0119292df8855e4435da8130bee1873b0e6a60c306accf81a08ea687bba3c  $RUNNER_TEMP/verus.zip" | sha256sum --check
+          unzip -q "$RUNNER_TEMP/verus.zip" -d "$RUNNER_TEMP/verus"
+          echo "$RUNNER_TEMP/verus/verus-x86-linux" >> "$GITHUB_PATH"
+      - run: cargo verus verify -p tusk-verified --locked --fwd-verus-args-to roots -- --no-cheating
+
   check:
     runs-on: ubuntu-latest
     steps:
@@ -69,7 +88,7 @@ jobs:
       - run: CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" cargo w
 
   build:
-    needs: [check, browser]
+    needs: [verify, check, browser]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

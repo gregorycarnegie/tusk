@@ -1,7 +1,8 @@
 //! Framing for the reader's HID reports: building commands and parsing replies.
 
-/// The reader declares one 41-byte input report and one 41-byte output report.
-pub const REPORT_BYTES: usize = 41;
+// These implementations are checked by Verus; display formatting stays here.
+use tusk_verified::MAX_PAYLOAD;
+pub use tusk_verified::{ACK, REPORT_BYTES, Reply, is_read_reply, parse};
 
 /// Any address with the high bit set works; it only picks the key phase.
 pub const ADDR: u8 = 0x88;
@@ -16,24 +17,11 @@ pub const LEDS_ASSIGNED: u8 = 0x06;
 /// RWD_READ_MIFARE: answers with the card's UID, then zero padding.
 pub const OP_READ_MIFARE: u8 = 0xD7;
 
-/// With the high bit set in the address, everything from the type byte onwards
-/// is XORed with this repeating key, starting at key index (address mod 8).
-/// Zero padding XORs to the key itself, which is why "Elephant" shows up as
-/// readable text in raw frames. Addresses without that bit are plaintext.
-const OBFUSCATION_KEY: [u8; 8] = *b"Elephant";
-
-/// Decoded reply type: the reader understood and answered.
-pub const ACK: u8 = 0x10;
-
 /// A read found nothing; the one payload byte says which kind of read. Only
 /// Mifare's matters here: the 0x28 that answers the handshake's TOKEN_R_DATA
 /// is for 125 kHz tokens, which this app does not read.
 pub const NO_TOKEN: u8 = 0x12;
 pub const NO_MIFARE: u8 = 0x01;
-
-/// "I did not understand", echoing our own bytes back. Sent unobfuscated even
-/// when the address asks for obfuscation, so it is read straight off the wire.
-const NAK: u8 = 0x13;
 
 /// What Net2 sends once before it starts polling. Without it the reader
 /// refuses the read, which is what a replug leaves us with. It is sent
@@ -51,25 +39,6 @@ pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02X}")).collect()
 }
 
-fn checksum(covered: &[u8]) -> u8 {
-    !covered.iter().fold(0u8, |sum, b| sum.wrapping_add(*b))
-}
-
-/// Scramble (or unscramble - it is the same XOR) the opcode and payload for
-/// an address, which is the only thing that decides the key phase.
-fn mask(addr: u8, body: &mut [u8]) {
-    if addr & 0x80 == 0 {
-        return;
-    }
-    for (i, b) in body.iter_mut().enumerate() {
-        *b ^= OBFUSCATION_KEY[(usize::from(addr) + i) % 8];
-    }
-}
-
-/// Longest payload that still leaves room for the checksum and the EOT byte.
-/// Reads and primes are far below this; it is here to document the ceiling.
-const MAX_PAYLOAD: usize = REPORT_BYTES - 6;
-
 /// Build a frame: STX, length, address, opcode, payload, checksum, EOT. The
 /// length counts STX through checksum, which is how the reader frames replies.
 /// Panics above MAX_PAYLOAD rather than silently truncating a command.
@@ -79,47 +48,7 @@ pub fn frame(addr: u8, opcode: u8, data: &[u8]) -> [u8; REPORT_BYTES] {
         data.len() <= MAX_PAYLOAD,
         "payload does not fit in one report"
     );
-    let len = 5 + data.len();
-    let mut buf = [0u8; REPORT_BYTES];
-    buf[0] = 0x02;
-    buf[1] = len as u8;
-    buf[2] = addr;
-    buf[3] = opcode;
-    buf[4..4 + data.len()].copy_from_slice(data);
-    mask(addr, &mut buf[3..len - 1]);
-    buf[len - 1] = checksum(&buf[..len - 1]);
-    buf[40] = 0x04;
-    buf
-}
-
-pub struct Reply {
-    pub msg_type: u8,
-    pub payload: Vec<u8>,
-}
-
-pub fn parse(bytes: &[u8]) -> Option<Reply> {
-    let len = usize::from(*bytes.get(1)?);
-    if bytes.first() != Some(&0x02) || len < 5 || len > bytes.len() {
-        return None;
-    }
-    if bytes[len - 1] != checksum(&bytes[..len - 1]) {
-        return None;
-    }
-    let mut clear = bytes[3..len - 1].to_vec();
-    // a NAK is never masked, and no masked ack can look like one
-    if clear.first() != Some(&NAK) {
-        mask(bytes[2], &mut clear);
-    }
-    Some(Reply {
-        msg_type: *clear.first()?,
-        payload: clear[1..].to_vec(),
-    })
-}
-
-/// A read answers with a long padded frame; the LED command answers with a
-/// single zero byte. Telling them apart stops that ack wiping a fresh token.
-pub fn is_read_reply(reply: &Reply) -> bool {
-    reply.msg_type == ACK && reply.payload.len() >= 16
+    tusk_verified::frame(addr, opcode, data)
 }
 
 // Frames captured from the real device with USBPcap while the Net2 software
@@ -141,6 +70,7 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
     use rstest::rstest;
+    use tusk_verified::{NAK, checksum, mask_byte};
 
     const REAL_VERSION: [u8; 18] = [
         0x02, 0x12, 0x88, 0x55, 0x39, 0x36, 0x32, 0x48, 0x31, 0x2B, 0x27, 0x65, 0x3A, 0x54, 0x5E,
@@ -270,9 +200,9 @@ mod tests {
         /// build and read frames.
         #[test]
         fn masking_twice_returns_the_original(addr: u8, body in prop::collection::vec(any::<u8>(), 0..40)) {
-            let mut scrambled = body.clone();
-            mask(addr, &mut scrambled);
-            mask(addr, &mut scrambled);
+            let scrambled: Vec<u8> = body.iter().enumerate()
+                .map(|(i, b)| mask_byte(addr, i, mask_byte(addr, i, *b)))
+                .collect();
             prop_assert_eq!(scrambled, body);
         }
     }

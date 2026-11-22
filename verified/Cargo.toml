@@ -1,0 +1,15 @@
+[package]
+name = "tusk-verified"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[package.metadata.verus]
+verify = true
+
+[dependencies]
+vstd = "=0.0.0-2026-11-01-0251"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(verus_only)'] }
