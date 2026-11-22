@@ -36,7 +36,7 @@ cargo install topcoat-cli --version <the topcoat version in Cargo.lock> --locked
 cargo fmt && topcoat fmt src
 ```
 
-Not `topcoat fmt --rustfmt`: in 0.10 it runs rustfmt without the edition, so
+Not `topcoat fmt --rustfmt`: as of 0.12.1 it still runs rustfmt without the edition, so
 2024 code fails to parse and the files that do parse get 2015 import order.
 
 ## Running the tests

@@ -1,8 +1,8 @@
 # Tusk
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.98%2B-orange.svg)](https://www.rust-lang.org)
-[![Topcoat](https://img.shields.io/badge/topcoat-0.8.1-56AA1C.svg)](https://github.com/tokio-rs/topcoat)
+[![Rust](https://img.shields.io/badge/rust-1.99%2B-orange.svg)](https://www.rust-lang.org)
+[![Topcoat](https://img.shields.io/badge/topcoat-0.12.1-56AA1C.svg)](https://github.com/tokio-rs/topcoat)
 [![Browser](https://img.shields.io/badge/browser-Chrome%20%7C%20Edge-4285f4.svg)](https://developer.mozilla.org/en-US/docs/Web/API/WebHID_API)
 [![CI](https://github.com/gregorycarnegie/tusk/actions/workflows/ci.yml/badge.svg)](https://github.com/gregorycarnegie/tusk/actions/workflows/ci.yml)
 
@@ -49,7 +49,7 @@ out was most of this project; [PROTOCOL.md](PROTOCOL.md) is the write-up.
 
   `uaccess` grants an ACL to whoever is logged in at the active seat, the same
   mechanism udev uses for webcams.
-- **Rust 1.98+** with the `wasm32-unknown-unknown` target, and
+- **Rust 1.99+** with the `wasm32-unknown-unknown` target, and
   `wasm-bindgen-cli` matching the `wasm-bindgen` version in `Cargo.lock`.
 
 ```sh
@@ -287,7 +287,7 @@ are disabled: there are no server endpoints or server-backed interactions. The
 Net2 tools call the Net2 Local API with `fetch`; Net2's nginx answers CORS for
 any origin, so this works from GitHub Pages as well as locally.
 
-Topcoat 0.8.1 does not yet provide a built-in static export command, so
+Topcoat 0.12.1 does not yet provide a built-in static export command, so
 `cargo run -- dist` renders its `view!` template to `dist/index.html`.
 Re-run the three build commands above after changing the sources, then reload.
 Serve or upload the resulting `dist` directory as-is. Relative asset URLs work
