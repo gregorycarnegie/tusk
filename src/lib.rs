@@ -1,4 +1,5 @@
 pub mod batch;
+pub mod manage;
 pub mod net2;
 pub mod people;
 pub mod protocol;
@@ -10,6 +11,8 @@ pub mod tsql;
 mod batch_client;
 #[cfg(target_arch = "wasm32")]
 mod client;
+#[cfg(target_arch = "wasm32")]
+mod manage_client;
 #[cfg(target_arch = "wasm32")]
 mod net2_client;
 #[cfg(target_arch = "wasm32")]

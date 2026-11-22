@@ -127,7 +127,15 @@ window.fetch = async (url, init = {}) => {
     let m;
 
     // Lists.
-    if (path === '/departments') return reply(200, net2.departments);
+    if (route(/^\/departments$/, 'GET')) return reply(200, net2.departments);
+    if (route(/^\/departments$/, 'POST')) {
+        net2.departments.push({id: 50 + net2.departments.filter(d => d.id >= 50).length, name: body.name});
+        return reply(201, net2.departments.at(-1));
+    }
+    if ((m = route(/^\/departments\/(\d+)$/, 'PUT'))) {
+        net2.departments.find(d => d.id === Number(m[1])).name = body.name;
+        return reply(200, body);
+    }
     if (path === '/departments/3/users') return reply(200, [users[8], users[9], users[12]]);
     if (path === '/accesslevels') return reply(200, [{id: 2, name: 'Car park'}, {id: 1, name: 'Working hours'}]);
     if (path === '/users/customfieldnames') return reply(200, [{id: 14, name: 'Admission number', maxLength: 50}]);
@@ -142,6 +150,7 @@ window.fetch = async (url, init = {}) => {
         return reply(201, user);
     }
     if ((m = route(/^\/users\/(\d+)$/, 'GET'))) return users[m[1]] ? reply(200, users[m[1]]) : reply(404);
+    if ((m = route(/^\/users\/(\d+)$/, 'PUT'))) return reply(200, body);
     if (route(/^\/users\/\d+\/departments$/, 'PUT')) return reply(204);
     if (route(/^\/users\/\d+\/doorpermissionset$/, 'PUT')) return reply(204);
     if ((m = route(/^\/users\/(\d+)\/image$/, 'PUT'))) {
@@ -889,6 +898,105 @@ def reader_feedback_waits_for_the_saved_card(b: Browser):
     b.js('delete net2.loseCardReply')
 
 
+MANAGED = "[...document.querySelectorAll('#manage-rows tr')].map(tr => [...tr.children].slice(1).map(td => td.textContent))"
+
+
+def managing_people(b: Browser):
+    # Net2 gets more departments; the page reads them again when it regains focus.
+    b.js("net2.departments.push({id: 10, name: 'Year 8'}, {id: 11, name: 'Leavers'}, {id: 12, name: 'Staff'})")
+    b.js("location.hash = 'manage'")
+    b.shown('manage-tool')
+    assert b.js("return $('manage-signin').hidden"), 'signed in already'
+    b.js("dispatchEvent(new Event('focus'))")
+    b.wait("$('manage-move-to').options.length === 6")
+    assert b.js("return [...$('manage-leavers-to').options].map(o => o.textContent)") == [
+        'The department they are in', 'Leavers', 'Staff', 'Tusk test', 'Year 7', 'Year 8',
+    ]
+    b.js("$('manage-department').value = '3'")
+    b.click('manage-load')
+    b.wait_starts('manage-notice', '3 people in Year 7')
+    # By surname; a placeholder expiry is no expiry.
+    assert b.js(f'return {MANAGED}') == [
+        ['Jane Doe', '8', '', ''],
+        ['Old Leaver', '9', '2020-07-31 (ended)', ''],
+        ['John Roe', '12', '', ''],
+    ]
+    assert b.js("return $('manage-move').disabled && $('manage-leave').disabled")
+    b.click('manage-all')
+    b.wait_text('manage-move', 'Move 3 people')
+    b.js("document.querySelector('#manage-rows tr:nth-child(2) input').click()")
+    b.wait_text('manage-move', 'Move 2 people')
+    assert b.js("return $('manage-all').indeterminate")
+
+    # Moving: one department PUT each, and nothing until confirmed.
+    b.js('window.asked = []; window.confirm = question => (asked.push(question), false)')
+    b.js("$('manage-move-to').value = '10'")
+    b.click('manage-move')
+    assert b.js('return asked') == ['Move 2 people to Year 8?']
+    b.js('window.confirm = () => true; net2.calls = []')
+    b.click('manage-move')
+    b.wait_starts('manage-notice', 'Done. 2 of 2 done.')
+    writes = b.js("return net2.calls.map(c => [c.method, c.path, c.body])")
+    assert writes == [
+        ['PUT', '/users/8/departments', {'id': 10, 'name': 'Year 8'}],
+        ['PUT', '/users/12/departments', {'id': 10, 'name': 'Year 8'}],
+    ], writes
+    assert [row[3] for row in b.js(f'return {MANAGED}')] == ['Moved to Year 8.', '', 'Moved to Year 8.']
+
+    # Leavers: their department, then the whole record back with only the
+    # expiry changed. Access that already ended is never given back.
+    b.click('manage-all')
+    b.js("$('manage-leavers-to').value = '11'; $('manage-leave-date').value = '2027-07-23'; net2.calls = []")
+    b.click('manage-leave')
+    b.wait_starts('manage-notice', 'Done. 3 of 3 done.')
+    writes = b.js("return net2.calls.map(c => [c.method, c.path, c.body])")
+    assert [w[:2] for w in writes] == [
+        ['PUT', '/users/8/departments'], ['GET', '/users/8'], ['PUT', '/users/8'],
+        ['PUT', '/users/9/departments'], ['GET', '/users/9'],
+        ['PUT', '/users/12/departments'], ['GET', '/users/12'], ['PUT', '/users/12'],
+    ], writes
+    assert writes[2][2] == {
+        'id': 8, 'firstName': 'Jane', 'lastName': 'Doe', 'hasImage': True,
+        'expiryDate': '2027-07-23T23:59:00',
+    }, writes[2]
+    assert b.js(f'return {MANAGED}') == [
+        ['Jane Doe', '8', '2027-07-23', 'Moved to Leavers. Access ends after 2027-07-23.'],
+        ['Old Leaver', '9', '2020-07-31 (ended)',
+         'Moved to Leavers. Access already ends sooner, so it was left as it is.'],
+        ['John Roe', '12', '2027-07-23', 'Moved to Leavers. Access ends after 2027-07-23.'],
+    ]
+
+    # A refusal is shown on the person and does not stop the others.
+    b.js("net2.failPath = '/users/8'; net2.calls = []")
+    b.click('manage-leave')
+    b.wait_starts('manage-notice', 'Done. 2 of 3 done.')
+    assert b.js(f'return {MANAGED}')[0][3].startswith('Moved to Leavers. Access not ended: Net2 refused')
+    assert b.js("return document.querySelector('#manage-rows tr td:last-child').className") == 'problem'
+    b.js('delete net2.failPath')
+    b.fits_desktop_and_phone('manage', 1000)
+
+    # The year change: renamed from the top down, one new lowest year.
+    b.js("$('manage-from').value = '7'; $('manage-to').value = '8'; $('manage-leavers-name').value = 'Leavers 2027'")
+    b.js('window.asked = []; window.confirm = question => (asked.push(question), true)')
+    b.click('manage-promote')
+    b.wait_starts('manage-notice', 'Year change done: 3 changes.')
+    assert b.js('return asked') == [
+        'Make these 3 changes in Net2?\n• Year 8 becomes Leavers 2027\n• Year 7 becomes Year 8\n'
+        '• a new, empty Year 7\nEveryone in each department moves with it.'
+    ]
+    assert b.js('return net2.departments') == [
+        {'id': 3, 'name': 'Year 8'}, {'id': 4, 'name': 'Tusk test'}, {'id': 10, 'name': 'Leavers 2027'},
+        {'id': 11, 'name': 'Leavers'}, {'id': 12, 'name': 'Staff'}, {'id': 50, 'name': 'Year 7'},
+    ]
+    assert 'Leavers 2027' in b.js("return [...$('manage-department').options].map(o => o.textContent)")
+    # Running it again changes nothing.
+    b.js('net2.calls = []')
+    b.click('manage-promote')
+    b.wait_starts('manage-notice', 'Nothing to change: Net2 already has Leavers 2027')
+    assert b.js("return net2.calls.filter(c => c.method !== 'GET')") == []
+    b.js('window.confirm = () => true')
+
+
 def unplugging_and_browsers_without_webhid(b: Browser):
     b.js('reader.unplugged = true; reader.opened = false')
     b.wait_starts('message', 'Reader unplugged')
@@ -911,6 +1019,7 @@ SCENARIOS = [
     reissuing_marks_old_cards_lost,
     looking_up_who_holds_a_card,
     reader_feedback_waits_for_the_saved_card,
+    managing_people,
     unplugging_and_browsers_without_webhid,
 ]
 

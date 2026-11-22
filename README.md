@@ -121,7 +121,7 @@ there is no persistent storage, so download regularly before closing the tab.
 
 ## Working with Net2 directly
 
-The card holder on **Read a card**, **Add people**, **Upload portraits**, and the **People
+The card holder on **Read a card**, **Add people**, **Manage**, **Upload portraits**, and the **People
 already in Net2** option under **Batch assign cards** use the Net2 Local API,
 signed in from the page itself: **Sign in** under the header, from any tab. Net2's
 own web server allows this; nothing passes through any other server, and
@@ -201,6 +201,37 @@ each person exactly once. An expiry
 date arrives on the right day, and the department and access level set after
 it leave it in place. That it runs to 23:59 rather than midnight is not yet
 checked on a real Net2, so check the first few if the time matters.
+
+**Manage people.** Sign in, pick a department or all users on **Manage**
+and press **Show people**. Tick people, then:
+
+- **Move to department** puts each of them in the department you choose.
+- **Mark as leavers** ends their access at 23:59 on the last day you choose,
+  so their cards stop working then, and first moves them to the leavers
+  department you pick (or leaves their department as it is). Tusk reads each
+  person from Net2 and sends the record back with only the expiry date
+  changed. Anyone whose access already ends sooner keeps that date; marking
+  a leaver never gives access back. To undo one, change the date in Net2.
+
+**Year change**, under the same tab, is for the end of the school year. Set
+the lowest and top years (7 and 13 by default) and the name the top year
+becomes (`Leavers` and the year). Tusk reads Net2's departments, shows the
+renames it will make, and after you confirm renames each year department one
+year up, from the top down: Y13 becomes `Leavers 2027`, Y12 becomes Y13, down
+to Y7 becoming Y8, then a new, empty Y7 is made. Departments named like `Y7`,
+`Year 7` or `year7` count; anything else is left alone. Students stay in their
+department as it is renamed, so the change is a handful of requests rather
+than one per student. Each step whose new name already exists counts as done,
+so a run that stops is finished by running it again, and nobody moves up
+twice. That also means an existing department with the leavers name makes
+Tusk treat the year as done; put mid-year leavers in a plain `Leavers`
+department instead. Access levels belong to each person, not their
+department, so a year change gives nobody new access. Department renames,
+department creation and leaver expiry dates are not yet checked on a real
+Net2: try them on a test person and department first.
+
+If your school's MIS already syncs year groups into Net2, let it own the year
+change instead: renaming keeps each department's Net2 ID.
 
 **Card holder.** Once signed in, every card you tap on **Read a card** shows
 who holds it in Net2, with their user ID and
@@ -355,6 +386,8 @@ repository subpath. Each push to `master` that passes is published to GitHub Pag
 | `src/portrait_client.rs` | Portrait matching, checking, and upload |
 | `src/people.rs` | New Net2 users from sheet rows: fields, dates, and the record sent |
 | `src/people_client.rs` | Adding people: checking against Net2, creating, and download |
+| `src/manage.rs` | The year change plan, and a leaver's record with its new expiry |
+| `src/manage_client.rs` | Managing people: moving, leavers, and the year change |
 | `src/lib.rs` | Shared protocol library and WebAssembly entry point |
 | `PROTOCOL.md` | The reverse-engineered protocol |
 | `src/style.css` | Page styling |

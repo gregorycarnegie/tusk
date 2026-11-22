@@ -58,6 +58,7 @@ pub enum Tool {
     #[default]
     Reader,
     People,
+    Manage,
     Batch,
     Portraits,
 }

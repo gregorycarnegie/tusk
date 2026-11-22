@@ -203,6 +203,7 @@ pub fn render(state: &State) {
         "owner-connect",
         "batch-signin",
         "people-signin",
+        "manage-signin",
     ] {
         element(id).set_hidden(connected);
     }
@@ -420,26 +421,54 @@ async fn connect(state: Rc<RefCell<State>>) {
 /// Departments only narrow the list; without them, All users still works.
 /// Read again whenever the page regains focus, so one just made in Net2
 /// shows up without signing in again. The choice survives if it still exists.
-async fn load_departments(state: Rc<RefCell<State>>) {
+pub(crate) async fn load_departments(state: Rc<RefCell<State>>) {
     if state.borrow().net2.is_none() {
         return;
     }
     if let Ok(reply) = call(&state, "GET", "/departments", None).await {
-        let list = element("batch-department").unchecked_into::<HtmlSelectElement>();
-        let chosen = list.value();
-        list.set_inner_html("<option value=\"\">All users</option>");
-        let document = web_sys::window().unwrap().document().unwrap();
-        for (id, name) in read_named(&reply) {
-            let option = document.create_element("option").unwrap();
-            option.set_attribute("value", &id.to_string()).unwrap();
-            option.set_text_content(Some(&name));
-            list.append_child(&option).unwrap();
-        }
-        list.set_value(&chosen);
-        if list.selected_index() < 0 {
-            list.set_value("");
+        let departments = read_named(&reply);
+        for id in [
+            "batch-department",
+            "manage-department",
+            "manage-move-to",
+            "manage-leavers-to",
+        ] {
+            fill(id, &departments);
         }
     }
+}
+
+/// The departments after the list's first option, which the page gives it:
+/// All users, or what choosing none means there.
+fn fill(id: &str, departments: &[(i32, String)]) {
+    let list = element(id).unchecked_into::<HtmlSelectElement>();
+    let chosen = list.value();
+    let first = list.first_element_child().unwrap();
+    list.set_text_content(None);
+    list.append_child(&first).unwrap();
+    let document = web_sys::window().unwrap().document().unwrap();
+    for (value, name) in departments {
+        let option = document.create_element("option").unwrap();
+        option.set_attribute("value", &value.to_string()).unwrap();
+        option.set_text_content(Some(name));
+        list.append_child(&option).unwrap();
+    }
+    list.set_value(&chosen);
+    if list.selected_index() < 0 {
+        list.set_value("");
+    }
+}
+
+/// Expiry dates are in the server's local time; the browser's date stands
+/// in for it, as both are on the same site.
+pub(crate) fn today() -> String {
+    let now = js_sys::Date::new_0();
+    format!(
+        "{:04}-{:02}-{:02}",
+        now.get_full_year(),
+        now.get_month() + 1,
+        now.get_date()
+    )
 }
 
 async fn load_people(state: Rc<RefCell<State>>) {
@@ -462,18 +491,9 @@ async fn load_people(state: Rc<RefCell<State>>) {
     element("batch-load")
         .unchecked_into::<web_sys::HtmlButtonElement>()
         .set_disabled(true);
-    // Expiry dates are in the server's local time; the browser's date stands
-    // in for it, as both are on the same site.
-    let now = js_sys::Date::new_0();
-    let today = format!(
-        "{:04}-{:02}-{:02}",
-        now.get_full_year(),
-        now.get_month() + 1,
-        now.get_date()
-    );
     let result = match call(&state, "GET", &path, None).await {
         Ok(reply) => {
-            read_users(&reply).and_then(|users| Batch::from_users(&users, replace, &today))
+            read_users(&reply).and_then(|users| Batch::from_users(&users, replace, &today()))
         }
         Err(problem) => Err(problem.message),
     };

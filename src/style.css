@@ -338,7 +338,7 @@
     .actions.stacked { display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; }
 
     .review { margin-top: 16px; overflow: hidden; }
-    #portrait-list.review, #people-list.review { margin-top: 0; }
+    #portrait-list.review, #people-list.review, #manage-list.review { margin-top: 0; }
     .review-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px 12px 18px; border-bottom: 1px solid var(--border); }
     .review-head h2 { margin: 0; font-size: 1rem; font-weight: 700; }
     .review-foot { padding: 12px 18px; border-top: 1px solid var(--border); }
@@ -360,6 +360,9 @@
     #batch-rows tr.current-person td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
     #portrait-list table { min-width: 46rem; }
     #people-list table { min-width: 68rem; }
+    #manage-list th:first-child, #manage-rows td:first-child { width: 1px; padding-right: 0; }
+    #manage-list input[type="checkbox"] { width: 1.05rem; height: 1.05rem; margin: 0; accent-color: var(--accent); vertical-align: middle; }
+    #manage-rows td:nth-child(3), #manage-rows td:nth-child(4) { font: .8rem/1.4 var(--mono); white-space: nowrap; }
     .anyway { margin-top: 6px; color: var(--text); }
     .anyway span { font-size: .85rem; }
     #people-rows td:first-child { font: .8rem/1.4 var(--mono); color: var(--muted); }
@@ -387,12 +390,12 @@
     .sheet-head h2 { margin: 0; font-size: 1.2rem; font-weight: 800; letter-spacing: -.02em; }
     #net2-problem { margin: 8px 22px 0; }
     .net2-form { display: grid; gap: 14px; padding: 14px 22px 22px; }
-    .net2-form label { display: grid; gap: 6px; font-weight: 600; font-size: .86rem; }
-    .net2-form input {
+    .net2-form label, .entry { display: grid; gap: 6px; font-weight: 600; font-size: .86rem; }
+    .net2-form input, .entry input {
       font: 500 .95rem/1.3 var(--ui); padding: .62rem .75rem; width: 100%;
       background: var(--sunken); color: var(--text); border: 1px solid var(--line); border-radius: 9px;
     }
-    .net2-form input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 25%, transparent); }
+    .net2-form input:focus, .entry input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 25%, transparent); }
     .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .net2-form details { color: var(--muted); font-size: .88rem; }
     .net2-form summary { cursor: pointer; margin-bottom: 8px; }
@@ -404,7 +407,7 @@
     @media (max-width: 900px) {
       .reading, .workspace { grid-template-columns: minmax(0, 1fr); }
       .stage { min-height: 300px; }
-      .workspace:has(#batch-session:not([hidden]), #portrait-list:not([hidden]), #people-list:not([hidden])) .work { order: -1; }
+      .workspace:has(#batch-session:not([hidden]), #portrait-list:not([hidden]), #people-list:not([hidden]), #manage-list:not([hidden])) .work { order: -1; }
     }
     @media (max-width: 720px) {
       :root { --gutter: 16px; }

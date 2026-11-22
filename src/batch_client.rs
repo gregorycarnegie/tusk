@@ -37,9 +37,11 @@ pub fn render(state: &State) {
     element("batch-tool").set_hidden(tool != Tool::Batch);
     element("portraits-intro").set_hidden(tool != Tool::Portraits);
     element("people-intro").set_hidden(tool != Tool::People);
+    element("manage-intro").set_hidden(tool != Tool::Manage);
     for (id, tab) in [
         ("reader-tab", Tool::Reader),
         ("people-tab", Tool::People),
+        ("manage-tab", Tool::Manage),
         ("batch-tab", Tool::Batch),
         ("portraits-tab", Tool::Portraits),
     ] {
@@ -167,6 +169,7 @@ pub fn setup(state: Rc<RefCell<State>>) {
                 "#batch" => Tool::Batch,
                 "#portraits" => Tool::Portraits,
                 "#people" => Tool::People,
+                "#manage" => Tool::Manage,
                 _ => Tool::Reader,
             };
             if state.tool != Tool::Batch

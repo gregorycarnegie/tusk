@@ -77,6 +77,10 @@ fn page(cx: &Cx) -> impl View {
                                 person_add_icon()
                                 <span>"Add people"</span>
                             </a>
+                            <a id="manage-tab" href="#manage">
+                                people_icon()
+                                <span>"Manage"</span>
+                            </a>
                             <a id="batch-tab" href="#batch">
                                 stack_icon()
                                 <span>"Batch assign"</span>
@@ -162,6 +166,12 @@ fn page(cx: &Cx) -> impl View {
                             "Create Net2 users from a spreadsheet, each with their department, access levels and portrait."
                         </p>
                     </section>
+                    <section id="manage-intro" class="intro" hidden="">
+                        <h1>"Manage people"</h1>
+                        <p>
+                            "Move people already in Net2 to another department, mark leavers, and move every year group up at the end of the year."
+                        </p>
+                    </section>
                     <section id="batch-intro" class="intro" hidden="">
                         <h1>"Batch assign cards"</h1>
                         <p>
@@ -231,6 +241,7 @@ fn page(cx: &Cx) -> impl View {
                         </aside>
                     </section>
                     people_tool()
+                    manage_tool()
                     batch_tool()
                     portrait_tool()
                     <noscript>"Enable JavaScript to connect to the reader."</noscript>
@@ -639,6 +650,151 @@ async fn people_tool(cx: &Cx) -> topcoat::Result<impl View> {
 }
 
 #[component]
+async fn manage_tool(cx: &Cx) -> topcoat::Result<impl View> {
+    Ok(view! {
+        <section
+            id="manage-tool"
+            class="workspace"
+            hidden=""
+            aria-label="Manage people in Net2"
+        >
+            <div class="rail panel">
+                <button
+                    id="manage-signin"
+                    class="secondary wide"
+                    popovertarget="net2-panel"
+                >
+                    "Sign in to Net2 first"
+                </button>
+                <div class="field">
+                    <label for="manage-department" class="field-label">"Who"</label>
+                    <select id="manage-department">
+                        <option value="">"All users"</option>
+                    </select>
+                    <button id="manage-load" class="secondary wide">
+                        "Show people"
+                    </button>
+                </div>
+                <div class="field">
+                    <label for="manage-move-to" class="field-label">
+                        "Move the ticked people"
+                    </label>
+                    <select id="manage-move-to">
+                        <option value="">"Choose a department"</option>
+                    </select>
+                    <button id="manage-move" class="primary wide">
+                        "Move to department"
+                    </button>
+                </div>
+                <div class="field">
+                    <span class="field-label">"Mark the ticked people as leavers"</span>
+                    <label class="entry">
+                        "Last day they can get in"
+                        <input id="manage-leave-date" type="date">
+                    </label>
+                    <label class="entry">
+                        "Then put them in"
+                        <select id="manage-leavers-to">
+                            <option value="">"The department they are in"</option>
+                        </select>
+                    </label>
+                    <button id="manage-leave" class="primary wide">
+                        "Mark as leavers"
+                    </button>
+                </div>
+                <details class="columns">
+                    <summary>"Year change"</summary>
+                    <div class="field">
+                        <p class="hint">
+                            "Renames each year group’s department one year up, from the top down, so every student moves with it. The top year becomes the leavers department named below, and a new, empty lowest year is made. Departments named like Y7 or Year 7 count; others are left alone. If it stops, run it again: it carries on without moving anyone twice."
+                        </p>
+                        <div class="pair">
+                            <label class="entry">
+                                "Lowest year"
+                                <input
+                                    id="manage-from"
+                                    type="number"
+                                    min="1"
+                                    max="14"
+                                    value="7"
+                                >
+                            </label>
+                            <label class="entry">
+                                "Top year"
+                                <input
+                                    id="manage-to"
+                                    type="number"
+                                    min="1"
+                                    max="14"
+                                    value="13"
+                                >
+                            </label>
+                        </div>
+                        <label class="entry">
+                            "The top year becomes"
+                            <input
+                                id="manage-leavers-name"
+                                type="text"
+                                autocomplete="off"
+                            >
+                        </label>
+                        <button id="manage-promote" class="secondary wide">
+                            "Move every year group up"
+                        </button>
+                    </div>
+                </details>
+                <button id="manage-stop" class="secondary" hidden="">
+                    "Stop after this one"
+                </button>
+                <p id="manage-notice" class="notice" role="status">
+                    "Sign in, choose who to show, then tick people. Nothing changes in Net2 until you confirm."
+                </p>
+            </div>
+            <div class="work">
+                <div id="manage-list" class="review panel" hidden="">
+                    <div class="review-head"><h2 id="manage-heading">"People"</h2></div>
+                    <div
+                        class="table-scroll tall"
+                        tabindex="0"
+                        role="region"
+                        aria-label="People in Net2"
+                    >
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th scope="col">
+                                        <input
+                                            id="manage-all"
+                                            type="checkbox"
+                                            aria-label="Tick everyone shown"
+                                        >
+                                    </th>
+                                    <th scope="col">"Name"</th>
+                                    <th scope="col">"User ID"</th>
+                                    <th scope="col">"Access ends"</th>
+                                    <th scope="col">"Result"</th>
+                                </tr>
+                            </thead>
+                            <tbody id="manage-rows"></tbody>
+                        </table>
+                    </div>
+                    <p class="hint review-foot">
+                        "A leaver’s access ends at 23:59 on their last day, when their cards stop working. Nothing else about them changes, so a mistake is put right in Net2 by changing the date back."
+                    </p>
+                </div>
+                <div class="empty-state">
+                    people_icon()
+                    <p class="empty-title">"No one shown yet"</p>
+                    <p class="hint">
+                        "Choose a department or All users on the left and press Show people. Tick the people to change, then choose what to do."
+                    </p>
+                </div>
+            </div>
+        </section>
+    })
+}
+
+#[component]
 async fn portrait_tool(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <section
@@ -839,6 +995,24 @@ async fn person_add_icon(cx: &Cx) -> topcoat::Result<impl View> {
 }
 
 #[component]
+async fn people_icon(cx: &Cx) -> topcoat::Result<impl View> {
+    Ok(view! {
+        <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+        >
+            <circle cx="9" cy="8" r="4"></circle>
+            <path d="M2 20a7 7 0 0 1 14 0M16 4a4 4 0 0 1 0 8M22 20a7 7 0 0 0-4-6.3"></path>
+        </svg>
+    })
+}
+
+#[component]
 async fn upload_icon(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         <svg
@@ -992,6 +1166,7 @@ mod tests {
             include_str!("net2_client.rs"),
             include_str!("portrait_client.rs"),
             include_str!("people_client.rs"),
+            include_str!("manage_client.rs"),
         ];
         let mut checked = 0;
         for source in sources {

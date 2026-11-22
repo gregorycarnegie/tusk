@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A **Manage** tab for people already in Net2. Show a department or all
+  users, tick people, and **Move** them to another department, or **Mark as
+  leavers**: their access ends at 23:59 on the day you choose and, if you
+  pick one, they move to a leavers department first. Someone whose access
+  already ends sooner keeps that date. Each change is confirmed first and
+  the table shows what happened to each person.
+- A **Year change** on the Manage tab moves every year group up in one go by
+  renaming the year departments from the top down (Y13 becomes the leavers
+  department named for the year, Y12 becomes Y13, and so on), then makes a
+  new, empty lowest year. Students keep their department, so nobody is moved
+  one at a time. If it stops, running it again carries on without moving
+  anyone twice.
+- Not yet checked on a real Net2: renaming and creating departments, and
+  marking a leaver, which sends the person's whole record back with only the
+  expiry changed. Try both on a test person and department first.
+
 ### Fixed
 
 - **Mark their old cards lost** did nothing on a real Net2: the request left

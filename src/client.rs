@@ -61,6 +61,7 @@ pub(crate) fn render(state: &State) {
     crate::net2_client::render(state);
     crate::portrait_client::render(state);
     crate::people_client::render(state);
+    crate::manage_client::render(state);
 }
 
 /// One picker per field in `id`, listing the sheet's columns, each preset to
@@ -126,6 +127,7 @@ pub fn start() {
     crate::net2_client::setup(state.clone());
     crate::portrait_client::setup(state.clone());
     crate::people_client::setup(state.clone());
+    crate::manage_client::setup(state.clone());
     crate::batch_client::setup(state.clone());
     render(&state.borrow());
     on_click("theme", toggle_theme);
