@@ -81,11 +81,11 @@ web-sys = { version = "0.3.107", features = [
 
 # Host tests: `cargo test`. proptest does not build for wasm32.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-rstest = { version = "0.28.0", default-features = false }
+rstest = { version = "0.29.0", default-features = false }
 # round-trip property testing for the frame codec
 proptest = "1.12.0"
 # builds the xlsx the sheet tests read
-zip = { version = "9.8.1", default-features = false }
+zip = { version = "9.8.2", default-features = false }
 googletest = "0.14.4"
 
 # Browser tests: `cargo w`, run in headless Chrome by
