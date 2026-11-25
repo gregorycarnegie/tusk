@@ -211,7 +211,26 @@ and press **Show people**. Tick people, then:
   department you pick (or leaves their department as it is). Tusk reads each
   person from Net2 and sends the record back with only the expiry date
   changed. Anyone whose access already ends sooner keeps that date; marking
-  a leaver never gives access back. To undo one, change the date in Net2.
+  a leaver never gives access back.
+- **Undo a leaver** sets a new expiry for the ticked people. Leave the
+  date blank to clear the expiry. Tusk reads the expiry back from Net2
+  before reporting success.
+- **Replace a card** saves the card on the desktop reader for one ticked
+  person, then marks their other active cards lost. The card type comes
+  from **Batch assign cards**.
+- **Access levels** adds or removes a chosen level for the ticked people.
+  Tusk reads each person's permission set first and keeps their other
+  levels and individual door permissions.
+- **Site activity and roll call** shows the last recorded access and recent
+  events for one ticked person, or an existing Net2 roll call report.
+- **Assign a card tapped at a door** lets you identify an unknown card by
+  its number, time and door, then assign it to one ticked person.
+- **Door commands** opens one door, holds it open, or returns it to normal
+  operation. Confirm the door and action before sending the command.
+- **Purge expired leavers** reviews ticked people whose expiry predates the
+  retention cutoff. Download the review CSV, check it, then confirm the
+  permanent deletion. Tusk checks each user again before deleting their
+  record and history.
 
 **Year change**, under the same tab, is for the end of the school year. Set
 the lowest and top years (7 and 13 by default) and the name the top year
@@ -221,14 +240,12 @@ year up, from the top down: Y13 becomes `Leavers 2027`, Y12 becomes Y13, down
 to Y7 becoming Y8, then a new, empty Y7 is made. Departments named like `Y7`,
 `Year 7` or `year7` count; anything else is left alone. Students stay in their
 department as it is renamed, so the change is a handful of requests rather
-than one per student. Each step whose new name already exists counts as done,
-so a run that stops is finished by running it again, and nobody moves up
-twice. That also means an existing department with the leavers name makes
-Tusk treat the year as done; put mid-year leavers in a plain `Leavers`
-department instead. Access levels belong to each person, not their
-department, so a year change gives nobody new access. Department renames,
-department creation and leaver expiry dates are not yet checked on a real
-Net2: try them on a test person and department first.
+than one per student. Start with one department per year in the selected
+range. If a run stops, use the same range and leavers name to resume it.
+Check that the leavers department contains the original top year when Tusk
+asks you to resume. Use a separate department for mid-year leavers.
+Access levels belong to each person, so a year change leaves their
+permissions in place. See [TODO.md](TODO.md) for the live Net2 release checks.
 
 If your school's MIS already syncs year groups into Net2, let it own the year
 change instead: renaming keeps each department's Net2 ID.

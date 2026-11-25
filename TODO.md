@@ -15,45 +15,58 @@ public and custom days, operators and lockdown rules.
       never extended.
 - [x] **Year change.** Manage tab: renames the year departments from the
       top down (`PUT /departments/{id}`), then makes the new lowest year
-      (`POST /departments`). Running it again after a stop finishes without
-      moving anyone twice (`src/manage.rs` tests every stopping point).
+      (`POST /departments`). A new run requires one department per year in
+      the selected range. Tests cover every stopping point, including ranges
+      with mixed `Y7` and `Year 8` naming.
 
 ## Check on a real Net2 before release
 
-Only the stand-in Net2 in `tests/static_site.py` has seen these. Use a test
-person and test departments, not real ones.
+The browser smoke test exercises these workflows with a stand-in Net2.
+Use a disposable Net2 database, a test person and test departments for the
+release checks below.
 
-- [ ] `PUT /users/{id}` with the record from `GET /users/{id}` changes only
-      the expiry: PIN, custom fields, access levels, portrait, activation
-      date and cards all stay as they were. If any are lost, the GET reply
-      leaves them out and `with_expiry` must fetch and re-send them.
-- [ ] The expiry shows as 23:59 on the chosen day in Net2, and a card is
-      refused at a door the day after.
-- [ ] `PUT /departments/{id}` with `{id, name}` renames the department, and
+Checked on a disposable Net2 database on 2026-11-25 (no doors configured):
+
+- [x] `PUT /users/{id}` with the record from `GET /users/{id}` changes only
+      the expiry: PIN, phone, custom fields, access levels, portrait,
+      activation date, department and cards all stayed as they were.
+- [x] `PUT /departments/{id}` with `{id, name}` renames the department, and
       its people stay in it.
-- [ ] `POST /departments` with `{name}` makes a department.
-- [ ] A full year change on a copy of the real department names, then run it
-      again and see that nothing changes.
+- [x] `POST /departments` with `{name}` makes a department.
+- [x] A full year change on test departments (Year 10 to 12), then run it
+      again: nothing changed.
+- [x] Undo a leaver: an explicit JSON `null` clears the expiry and keeps the
+      rest of the record. Moving the expiry to a different date works.
+- [x] Access levels: removing a level works. Net2 keeps only the first
+      access level in the set and still answers 204, so adding a second
+      level does nothing. Tusk now reads the set back and reports this.
+- [x] Reviewed purge: the user and their cards are gone afterwards.
+- [x] `sdk.UsersEx` has `LastKnownLocation`, not `LastArea`; the
+      last-access query now uses it.
 
-## Next, most useful first
+Still to check:
 
-- [ ] **Undo a leaver.** Clear or move the expiry date back from Tusk.
-      Needs a live check of what clears an expiry (`null`, or leaving the
-      field out, which the PUT-user trap says clears it).
-- [ ] **Replacement card for one person.** Pick them on Manage, tap a card;
-      reuse `save_card`, which already marks the old card lost.
-- [ ] **Add or remove access levels for the ticked people,** for example
-      sixth-form access after the year change. `PUT
-      /users/{id}/doorpermissionset` replaces the whole set, so read it,
-      change it, and send it back.
-- [ ] **Was this person on site?** Their last access time and place
-      (`sdk.UsersEx` through querydb) and recent events (`GET /events`).
-      Read only.
-- [ ] **Fire roll call.** `rollcallreports` endpoints. Read only.
-- [ ] **Assign a card someone tapped at a door,** from
-      `events/latestunknowntokens`, without the desk reader.
-- [ ] **Open or hold open a door from reception.** `commands/door/open` and
-      `holdopen`. Lockdown stays in Net2.
-- [ ] **Delete leavers after a set number of years** (GDPR).
-      `DELETE /users?purge=true` cannot be undone, so it needs a second
-      confirmation and a results download first.
+- [ ] Net2 stores expiry as a date only: `T23:59:00` comes back as
+      `T00:00:00`. Check at a door whether a card still works on the last
+      day and is refused the day after, then fix the "23:59" wording in the
+      README and the Manage tab if needed.
+- [ ] On a Net2 with doors: last-access and event fields, roll call, unknown
+      cards, and open, hold and return to normal on a test door.
+- [ ] Replace a card on the Manage tab with the desk reader.
+- [ ] Add people with more than one `;`-separated access level: Net2 will
+      likely keep only the first.
+
+## Implemented and browser-tested
+
+- [x] **Undo a leaver.** Change or clear the expiry for ticked people.
+- [x] **Replace one person's card.** Tick them on Manage, tap the new card,
+      and confirm. Old cards are marked lost after Net2 saves the new card.
+- [x] **Add or remove access levels** for ticked people while preserving
+      individual door permissions.
+- [x] **Show a person's site activity** using `sdk.UsersEx` and `GET /events`.
+- [x] **Show fire roll call reports** and their entries from Net2.
+- [x] **Assign a card tapped at a door** using `events/latestunknowntokens`.
+- [x] **Open, hold open, or return a door to normal operation** from Manage.
+- [x] **Purge ticked leavers past the retention period** after downloading
+      the review and confirming a second time. Recheck each user before
+      sending `DELETE /users/{id}?purge=true`.

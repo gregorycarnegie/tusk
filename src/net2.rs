@@ -141,7 +141,7 @@ pub fn refresh_token(reply: &str) -> Option<String> {
 }
 
 /// Net2 documents camelCase but its examples are PascalCase; accept either.
-fn field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
+pub(crate) fn field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
     value.get(key).or_else(|| {
         let mut chars = key.chars();
         let pascal: String = chars
@@ -154,7 +154,7 @@ fn field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
     })
 }
 
-fn text(value: &Value, key: &str) -> String {
+pub(crate) fn text(value: &Value, key: &str) -> String {
     field(value, key)
         .and_then(Value::as_str)
         .unwrap_or("")
@@ -319,6 +319,18 @@ pub fn owner_query(card: u32) -> String {
         )
         .and_where(Expr::col(("c", "CardNumber")).eq(card))
         .order_by(("c", "LostCard"), Order::Asc);
+    crate::tsql::sql(&query)
+}
+
+/// When and where a person last used a card, from Net2's own tables.
+pub fn last_access_query(user: i32) -> String {
+    use sea_query::ExprTrait;
+    let query = Query::select()
+        .expr_as(Expr::col("LastAccessTime"), "lastaccesstime")
+        .expr_as(Expr::col("LastKnownLocation"), "lastarea")
+        .from(("sdk", "UsersEx"))
+        .and_where(Expr::col("UserID").eq(user))
+        .to_owned();
     crate::tsql::sql(&query)
 }
 
@@ -635,6 +647,15 @@ mod tests {
         );
         assert_eq!(lost_tokens("[]", "999"), Ok(vec![]));
         assert_that!(lost_tokens("{}", "999"), err(anything()));
+    }
+
+    #[test]
+    fn last_access_reads_the_columns_net2_has() {
+        assert_eq!(
+            last_access_query(43),
+            "SELECT [LastAccessTime] AS [lastaccesstime], [LastKnownLocation] AS [lastarea] \
+             FROM [sdk].[UsersEx] WHERE [UserID] = 43"
+        );
     }
 
     #[test]
