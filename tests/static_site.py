@@ -88,7 +88,7 @@ FAKE_NET2 = r"""
 window.net2 = {
     calls: [], queries: [], token: 'T0K',
     cards: {8: ['11111111']}, lost: [], images: {}, created: [],
-    departments: [{id: 3, name: 'Year 7'}],
+    departments: [{id: 3, name: 'Year 7'}], edited: {}, permissions: {}, purged: [],
 };
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init = {}) => {
@@ -123,7 +123,9 @@ window.fetch = async (url, init = {}) => {
         8: {id: 8, firstName: 'Jane', lastName: 'Doe', hasImage: true, expiryDate: '0001-01-01T00:00:00'},
         9: {id: 9, firstName: 'Old', lastName: 'Leaver', hasImage: false, expiryDate: '2020-07-31T23:59:00'},
         12: {id: 12, firstName: 'John', lastName: 'Roe', hasImage: false},
+        ...net2.edited,
     };
+    for (const id of net2.purged) delete users[id];
     let m;
 
     // Lists.
@@ -139,6 +141,22 @@ window.fetch = async (url, init = {}) => {
     if (path === '/departments/3/users') return reply(200, [users[8], users[9], users[12]]);
     if (path === '/accesslevels') return reply(200, [{id: 2, name: 'Car park'}, {id: 1, name: 'Working hours'}]);
     if (path === '/users/customfieldnames') return reply(200, [{id: 14, name: 'Admission number', maxLength: 50}]);
+    if (path === '/events/latestunknowntokens?max=20') return reply(200, [
+        {id: 90, tokenNumber: 78901234, eventDate: '2027-07-23T08:30:00', where: 'Reception'},
+    ]);
+    if (path.startsWith('/events?')) return reply(200, [
+        {userID: 8, deviceName: 'Reception', eventTime: '2027-07-23T08:00:00', eventDescription: 'Access permitted'},
+        {userID: 9, deviceName: 'Side entrance', eventTime: '2027-07-23T09:00:00', eventDescription: 'Wrong person'},
+    ]);
+    if (path === '/rollcallreports') return reply(200, [{id: 1, areaGroup: {name: 'Campus'}, dateTimeCreated: '2027-07-23T10:00:00'}]);
+    if (path === '/rollcallreports/1/reportitems') return reply(200, [
+        {userId: 8, firstName: 'Jane', lastName: 'Doe', lastKnownPosition: 'Library',
+         lastAccessTime: '2027-07-23T08:00:00', musteredAt: 'Main gate', markedSafeBy: [{id: 1, name: 'Steward'}]},
+    ]);
+    if (path === '/doors') return reply(200, [{id: 42, name: 'Reception'}]);
+    if (path.startsWith('/commands/door/')) return reply(200, {output: {
+        status: path.endsWith('/open') ? 'CompletedFalied' : 'CompletedOk',
+    }});
 
     // People: read, add, and their department, door permissions and portrait.
     if (route(/^\/users$/, 'GET')) return reply(200, Object.values(users).concat(net2.created));
@@ -150,9 +168,24 @@ window.fetch = async (url, init = {}) => {
         return reply(201, user);
     }
     if ((m = route(/^\/users\/(\d+)$/, 'GET'))) return users[m[1]] ? reply(200, users[m[1]]) : reply(404);
-    if ((m = route(/^\/users\/(\d+)$/, 'PUT'))) return reply(200, body);
+    if ((m = route(/^\/users\/(\d+)$/, 'PUT'))) {
+        if (net2.persistManaged) net2.edited[m[1]] = body;
+        return reply(200, body);
+    }
+    if ((m = route(/^\/users\/(\d+)\?purge=true$/, 'DELETE'))) {
+        net2.purged.push(Number(m[1]));
+        return reply(204);
+    }
     if (route(/^\/users\/\d+\/departments$/, 'PUT')) return reply(204);
-    if (route(/^\/users\/\d+\/doorpermissionset$/, 'PUT')) return reply(204);
+    if ((m = route(/^\/users\/(\d+)\/doorpermissionset$/))) {
+        if (method === 'PUT') {
+            // A real Net2 answers 204 but keeps only the first access level.
+            if (net2.oneLevel) body.accessLevels = body.accessLevels.slice(0, 1);
+            net2.permissions[m[1]] = body;
+            return reply(204);
+        }
+        return reply(200, net2.permissions[m[1]]);
+    }
     if ((m = route(/^\/users\/(\d+)\/image$/, 'PUT'))) {
         net2.images[m[1]] = body.base64Data;
         return reply(204);
@@ -183,6 +216,9 @@ window.fetch = async (url, init = {}) => {
     if ((m = route(/^\/customquery\/querydb\?query=(.*)$/, 'GET'))) {
         const sql = decodeURIComponent(m[1]);
         net2.queries.push(sql);
+        if (sql.includes('[LastAccessTime]')) {
+            return reply(200, [{lastaccesstime: '2027-07-23T08:00:00', lastarea: 'Library'}]);
+        }
         const card = sql.match(/WHERE \[c\]\.\[CardNumber\] = (\d+) /)[1];
         return reply(200, Object.entries(net2.cards)
             .filter(([, cards]) => cards.includes(card))
@@ -1008,6 +1044,114 @@ def unplugging_and_browsers_without_webhid(b: Browser):
     assert b.js("return $('connect').disabled")
 
 
+def manage_release_workflows(b: Browser):
+    b.js("""net2.calls = []; net2.persistManaged = true;
+        net2.edited[8] = {id: 8, firstName: 'Jane', lastName: 'Doe', hasImage: true,
+            pin: '1234', expiryDate: '2024-07-23T23:59:00'};
+        net2.permissions[8] = {accessLevels: [1], individualPermissions: [{id: 42, timezoneId: 3}]};
+        $('manage-department').value = '';""")
+    b.click('manage-load')
+    b.wait_contains('manage-notice', 'people in All users')
+    b.js("[...$('manage-rows').rows].find(row => row.children[2].textContent === '8').querySelector('input').click()")
+    assert b.js("return document.querySelector('#manage-rows tr:has(input:checked)').children[2].textContent") == '8'
+    b.js("$('manage-undo-date').value = '2027-11-23'")
+    b.click('manage-undo')
+    b.wait_contains('manage-rows', 'Access ends after 2027-11-23.')
+    b.js("$('manage-undo-date').value = ''")
+    b.click('manage-undo')
+    b.wait_contains('manage-rows', 'Expiry cleared.')
+    assert b.js('return [net2.edited[8].pin, net2.edited[8].expiryDate]') == ['1234', None]
+
+    b.click('manage-load-levels')
+    b.wait_text('manage-notice', '2 access levels available.')
+    b.js("$('manage-level').value = '2'")
+    b.click('manage-add-level')
+    b.wait_contains('manage-rows', 'Added Car park.')
+    assert b.js('return net2.permissions[8]') == {
+        'accessLevels': [1, 2], 'individualPermissions': [{'id': 42, 'timezoneId': 3}],
+    }
+    b.click('manage-remove-level')
+    b.wait_contains('manage-rows', 'Removed Car park.')
+    assert b.js('return net2.permissions[8]') == {
+        'accessLevels': [1], 'individualPermissions': [{'id': 42, 'timezoneId': 3}],
+    }
+    b.js('net2.oneLevel = true')
+    b.click('manage-add-level')
+    b.wait_contains('manage-rows', 'Net2 did not save the change to Car park.')
+    assert b.js('return net2.permissions[8].accessLevels') == [1]
+    b.js('net2.oneLevel = false')
+
+    b.lift()
+    signals = b.js('return reader.assignedSignals')
+    b.tap('5B7D4062')
+    b.wait_text('manage-card', 'Card 34935138 is on the reader.')
+    b.js('window.confirm = () => false; net2.calls = []')
+    b.click('manage-replace')
+    assert b.js('return net2.calls') == []
+    b.js('window.confirm = () => true')
+    b.click('manage-replace')
+    b.wait_contains('manage-rows', 'Saved card 34935138.')
+    b.wait(f'reader.assignedSignals === {signals + 1}')
+    b.lift()
+    assert b.js('return net2.cards[8].at(-1)') == '34935138'
+    assert b.js('return net2.cards[8].slice(0,-1).every(card => net2.lost.includes(card))')
+
+    b.click('manage-activity')
+    b.wait_contains('manage-site-status', 'Library. Showing 1 recent Net2 events.')
+    b.wait_contains('manage-site-table', 'Access permitted')
+    assert 'Wrong person' not in b.text('manage-site-table')
+    b.click('manage-load-rollcalls')
+    b.wait_starts('manage-site-status', '1 available.')
+    b.js("$('manage-rollcall').value = '1'")
+    b.click('manage-show-rollcall')
+    b.wait_contains('manage-site-table', 'Main gate')
+    b.wait_contains('manage-site-table', 'Steward')
+
+    b.click('manage-load-unknown')
+    b.wait_starts('manage-site-status', '1 available.')
+    b.js("$('manage-unknown').value = '78901234'; net2.calls = []")
+    b.click('manage-assign-unknown')
+    b.wait_text('manage-site-status', 'Saved card 78901234 for Jane Doe.')
+    assert b.js("return net2.calls.map(c => [c.method, c.path])") == [['POST', '/users/8/tokens']]
+    assert b.js("return !net2.lost.includes('34935138')")
+
+    b.click('manage-load-doors')
+    b.wait_starts('manage-site-status', '1 available.')
+    b.js("$('manage-door').value = '42'; net2.calls = []")
+    b.click('manage-open-door')
+    b.wait_text('manage-site-status', 'Net2 reported that the command failed.')
+    b.click('manage-hold-door')
+    b.wait_text('manage-site-status', 'Net2 completed the command.')
+    b.click('manage-normal-door')
+    b.wait_text('manage-site-status', 'Net2 completed the command.')
+    assert b.js("return net2.calls.map(c => [c.method, c.path, c.body])") == [
+        ['POST', '/commands/door/open', {'doorId': 42}],
+        ['POST', '/commands/door/holdopen', {'doorId': 42}],
+        ['POST', '/commands/door/reinstate', {'doorId': 42}],
+    ]
+
+    b.js("""net2.calls = [];
+        document.querySelector('#manage-rows tr:has(input:checked) input').click();
+        [...$('manage-rows').rows].find(row => row.children[2].textContent === '9').querySelector('input').click();
+        $('manage-retention').value = '1'""")
+    b.click('manage-preview-purge')
+    b.wait_contains('manage-notice', '1 person eligible')
+    assert b.js("$('manage-purge').click(); return $('manage-purge').disabled")
+    assert b.js('return net2.calls') == []
+    b.click('manage-download-purge')
+    review = b.downloaded('net2-purge-review.csv')
+    assert review[1][:2] == ['9', '2020-07-31'], review
+    b.js("""net2.edited[9] = {id: 9, firstName: 'Old', lastName: 'Leaver',
+        hasImage: false, expiryDate: null};""")
+    b.click('manage-purge')
+    b.wait_contains('manage-rows', 'User changed since the review.')
+    assert b.js('return net2.purged') == []
+    b.js('delete net2.edited[9]')
+    b.click('manage-preview-purge', 'manage-download-purge', 'manage-purge')
+    b.wait_contains('manage-rows', 'Purged user and history.')
+    assert b.js('return net2.purged') == [9]
+
+
 SCENARIOS = [
     reading_and_copying_a_card,
     batch_assign_from_a_spreadsheet,
@@ -1020,6 +1164,7 @@ SCENARIOS = [
     looking_up_who_holds_a_card,
     reader_feedback_waits_for_the_saved_card,
     managing_people,
+    manage_release_workflows,
     unplugging_and_browsers_without_webhid,
 ]
 

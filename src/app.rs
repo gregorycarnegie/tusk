@@ -703,6 +703,44 @@ async fn manage_tool(cx: &Cx) -> topcoat::Result<impl View> {
                     </button>
                 </div>
                 <details class="columns">
+                    <summary>"Undo a leaver"</summary>
+                    <label class="entry">
+                        "New last day of access (optional)"
+                        <input id="manage-undo-date" type="date">
+                    </label>
+                    <p class="hint">"Leave the date blank to clear the expiry."</p>
+                    <button id="manage-undo" class="secondary wide">
+                        "Change or clear expiry"
+                    </button>
+                </details>
+                <details class="columns">
+                    <summary>"Replace a card"</summary>
+                    <p id="manage-card" class="hint">
+                        "Tick one person and tap their new card."
+                    </p>
+                    <button id="manage-replace" class="primary wide">
+                        "Replace card"
+                    </button>
+                </details>
+                <details class="columns">
+                    <summary>"Access levels"</summary>
+                    <button id="manage-load-levels" class="secondary wide">
+                        "Load access levels"
+                    </button>
+                    <label class="entry">
+                        "Access level"
+                        <select id="manage-level">
+                            <option value="">"Choose an access level"</option>
+                        </select>
+                    </label>
+                    <button id="manage-add-level" class="secondary wide">
+                        "Add access level"
+                    </button>
+                    <button id="manage-remove-level" class="secondary wide">
+                        "Remove access level"
+                    </button>
+                </details>
+                <details class="columns">
                     <summary>"Year change"</summary>
                     <div class="field">
                         <p class="hint">
@@ -743,14 +781,95 @@ async fn manage_tool(cx: &Cx) -> topcoat::Result<impl View> {
                         </button>
                     </div>
                 </details>
+                <details class="columns">
+                    <summary>"Site activity and roll call"</summary>
+                    <button id="manage-activity" class="secondary wide">
+                        "Show activity for one ticked person"
+                    </button>
+                    <button id="manage-load-rollcalls" class="secondary wide">
+                        "Load roll call reports"
+                    </button>
+                    <label class="entry">
+                        "Net2 roll call report"
+                        <select id="manage-rollcall">
+                            <option value="">"Choose a report"</option>
+                        </select>
+                    </label>
+                    <button id="manage-show-rollcall" class="secondary wide">
+                        "Show report"
+                    </button>
+                </details>
+                <details class="columns">
+                    <summary>"Assign a card tapped at a door"</summary>
+                    <button id="manage-load-unknown" class="secondary wide">
+                        "Load recent unknown cards"
+                    </button>
+                    <label class="entry">
+                        "Unknown card"
+                        <select id="manage-unknown">
+                            <option value="">"Choose a card by time and door"</option>
+                        </select>
+                    </label>
+                    <button id="manage-assign-unknown" class="primary wide">
+                        "Assign to one ticked person"
+                    </button>
+                </details>
+                <details class="columns">
+                    <summary>"Door commands"</summary>
+                    <button id="manage-load-doors" class="secondary wide">
+                        "Load doors"
+                    </button>
+                    <label class="entry">
+                        "Door"
+                        <select id="manage-door">
+                            <option value="">"Choose a door"</option>
+                        </select>
+                    </label>
+                    <button id="manage-open-door" class="secondary wide">
+                        "Open once"
+                    </button>
+                    <button id="manage-hold-door" class="secondary wide">
+                        "Hold open"
+                    </button>
+                    <button id="manage-normal-door" class="secondary wide">
+                        "Return to normal operation"
+                    </button>
+                </details>
                 <button id="manage-stop" class="secondary" hidden="">
                     "Stop after this one"
                 </button>
+                <details class="columns">
+                    <summary>"Purge expired leavers"</summary>
+                    <label class="entry">
+                        "Years to keep expired records"
+                        <input id="manage-retention" type="number" min="1" max="100">
+                    </label>
+                    <button id="manage-preview-purge" class="secondary wide">
+                        "Review ticked leavers"
+                    </button>
+                    <button id="manage-download-purge" class="secondary wide">
+                        "Download purge review"
+                    </button>
+                    <button id="manage-purge" class="secondary wide">
+                        "Permanently purge reviewed records"
+                    </button>
+                </details>
                 <p id="manage-notice" class="notice" role="status">
                     "Sign in, choose who to show, then tick people. Nothing changes in Net2 until you confirm."
                 </p>
             </div>
             <div class="work">
+                <section id="manage-site-results" class="pane panel" hidden="">
+                    <h2 id="manage-site-heading" class="pane-title">"Site activity"</h2>
+                    <p id="manage-site-status" role="status"></p>
+                    <div
+                        id="manage-site-table"
+                        class="table-scroll"
+                        tabindex="0"
+                        role="region"
+                        aria-label="Net2 report"
+                    ></div>
+                </section>
                 <div id="manage-list" class="review panel" hidden="">
                     <div class="review-head"><h2 id="manage-heading">"People"</h2></div>
                     <div
@@ -779,7 +898,7 @@ async fn manage_tool(cx: &Cx) -> topcoat::Result<impl View> {
                         </table>
                     </div>
                     <p class="hint review-foot">
-                        "A leaver’s access ends at 23:59 on their last day, when their cards stop working. Nothing else about them changes, so a mistake is put right in Net2 by changing the date back."
+                        "A leaver’s access ends at 23:59 on their last day. Undo a leaver changes or clears the expiry."
                     </p>
                 </div>
                 <div class="empty-state">
@@ -1167,6 +1286,7 @@ mod tests {
             include_str!("portrait_client.rs"),
             include_str!("people_client.rs"),
             include_str!("manage_client.rs"),
+            include_str!("manage_site_client.rs"),
         ];
         let mut checked = 0;
         for source in sources {

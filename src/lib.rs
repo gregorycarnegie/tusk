@@ -14,6 +14,8 @@ mod client;
 #[cfg(target_arch = "wasm32")]
 mod manage_client;
 #[cfg(target_arch = "wasm32")]
+mod manage_site_client;
+#[cfg(target_arch = "wasm32")]
 mod net2_client;
 #[cfg(target_arch = "wasm32")]
 mod people_client;

@@ -77,6 +77,7 @@ pub struct Session {
 /// Shared by the polling loop and the browser controls, without a UI framework.
 pub struct State {
     pub card: Option<Token>,
+    pub manage_assigned: Option<u32>,
     pub status: (Tone, String),
     pub link: Link,
     pub copied: String,
@@ -93,6 +94,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             card: None,
+            manage_assigned: None,
             status: (Tone::Idle, "Not connected".into()),
             link: Link::default(),
             copied: String::new(),
@@ -121,14 +123,19 @@ impl State {
     /// Light the reader once for a card that was just given to someone.
     pub fn take_assigned_leds(&mut self) -> bool {
         self.status.0 == Tone::Ready
-            && self
-                .batch
-                .as_mut()
-                .is_some_and(|batch| batch.take_signal(self.card.as_ref()))
+            && (self
+                .manage_assigned
+                .take()
+                .is_some_and(|number| self.card.as_ref().is_some_and(|card| card.number == number))
+                || self
+                    .batch
+                    .as_mut()
+                    .is_some_and(|batch| batch.take_signal(self.card.as_ref())))
     }
 
     pub fn show(&mut self, card: Option<Token>) {
         if self.card != card {
+            self.manage_assigned = None;
             if let Some(batch) = &mut self.batch {
                 batch.observe(card.as_ref());
             }

@@ -175,6 +175,7 @@ pub async fn call(
     }
     if result.as_ref().is_err_and(|problem| problem.expired) {
         crate::portrait_client::forget_matches();
+        crate::manage_client::forget_people();
         let mut state = state.borrow_mut();
         state.net2 = None;
         state.net2_status = (
@@ -208,6 +209,9 @@ pub fn render(state: &State) {
         element(id).set_hidden(connected);
     }
     element("net2-disconnect").set_hidden(!connected);
+    element("net2-disconnect")
+        .unchecked_into::<web_sys::HtmlButtonElement>()
+        .set_disabled(crate::manage_client::busy());
     let sending = state.batch.as_ref().is_some_and(|b| b.sending.is_some());
     element("batch-load")
         .unchecked_into::<web_sys::HtmlButtonElement>()
@@ -216,7 +220,7 @@ pub fn render(state: &State) {
     if sending && !SAVING.get() {
         SAVING.set(true);
         if let Some(app) = APP.with(|app| app.get().cloned()) {
-            spawn_local(save_card(app));
+            spawn_local(save_batch_card(app));
         }
     }
     // Each tap on the Read tab is looked up once; lifting the card forgets it.
@@ -262,7 +266,50 @@ async fn look_up(state: Rc<RefCell<State>>, card: u32) {
     crate::client::render(&state.borrow());
 }
 
-async fn save_card(state: Rc<RefCell<State>>) {
+pub(crate) fn card_type() -> String {
+    element("batch-token-type")
+        .unchecked_into::<HtmlSelectElement>()
+        .value()
+}
+
+pub(crate) async fn save_card(
+    state: &Rc<RefCell<State>>,
+    id: i32,
+    value: &str,
+    token_type: &str,
+    replace: bool,
+    retire: bool,
+) -> Result<Result<String, String>, Failure> {
+    let path = format!("/users/{id}/tokens");
+    // Net2 is asked at the moment of writing, so the answer is current.
+    let mut old = Vec::new();
+    if !replace || retire {
+        let reply = call(state, "GET", &path, None).await?;
+        let unreadable = |message| failure(message, false, false);
+        if !replace && let Some(card) = read_cards(&reply).map_err(unreadable)?.into_iter().next() {
+            return Ok(Err(card));
+        }
+        old = lost_tokens(&reply, value).map_err(unreadable)?;
+    }
+    let token = json!({ "tokenType": token_type, "tokenValue": value, "isLost": false });
+    call(state, "POST", &path, Some(&token)).await?;
+    // The new card is in, so a failure from here on still counts as saved:
+    // the person has both cards rather than neither.
+    let mut retired = String::new();
+    for (token_id, card, body) in old {
+        let marked = call(state, "PUT", &format!("{path}/{token_id}"), Some(&body)).await;
+        retired.push_str(&match marked {
+            Ok(_) => format!(" Old card {card} is marked lost."),
+            Err(problem) => format!(
+                " Old card {card} was not marked lost: {} Mark it lost in Net2.",
+                problem.message
+            ),
+        });
+    }
+    Ok(Ok(retired))
+}
+
+async fn save_batch_card(state: Rc<RefCell<State>>) {
     let job = state.borrow().batch.as_ref().and_then(|batch| {
         let (id, name, value) = batch.sending_to()?;
         Some((id, name, value, batch.replace))
@@ -271,45 +318,11 @@ async fn save_card(state: Rc<RefCell<State>>) {
         SAVING.set(false);
         return;
     };
-    let path = format!("/users/{id}/tokens");
-    let token_type = element("batch-token-type")
-        .unchecked_into::<HtmlSelectElement>()
-        .value();
     let retire = replace
         && element("batch-retire")
             .unchecked_into::<HtmlInputElement>()
             .checked();
-    let outcome = async {
-        // Net2 is asked at the moment of writing, so the answer is current.
-        let mut old = Vec::new();
-        if !replace || retire {
-            let reply = call(&state, "GET", &path, None).await?;
-            let unreadable = |message| failure(message, false, false);
-            if !replace
-                && let Some(card) = read_cards(&reply).map_err(unreadable)?.into_iter().next()
-            {
-                return Ok(Err(card));
-            }
-            old = lost_tokens(&reply, &value).map_err(unreadable)?;
-        }
-        let token = json!({ "tokenType": token_type, "tokenValue": value, "isLost": false });
-        call(&state, "POST", &path, Some(&token)).await?;
-        // The new card is in, so a failure from here on still counts as saved:
-        // the person has both cards rather than neither.
-        let mut retired = String::new();
-        for (token_id, card, body) in old {
-            let marked = call(&state, "PUT", &format!("{path}/{token_id}"), Some(&body)).await;
-            retired.push_str(&match marked {
-                Ok(_) => format!(" Old card {card} is marked lost."),
-                Err(problem) => format!(
-                    " Old card {card} was not marked lost: {} Mark it lost in Net2.",
-                    problem.message
-                ),
-            });
-        }
-        Ok::<_, Failure>(Ok(retired))
-    }
-    .await;
+    let outcome = save_card(&state, id, &value, &card_type(), replace, retire).await;
     SAVING.set(false);
     let mut state = state.borrow_mut();
     if let Some(batch) = &mut state.batch
@@ -440,7 +453,7 @@ pub(crate) async fn load_departments(state: Rc<RefCell<State>>) {
 
 /// The departments after the list's first option, which the page gives it:
 /// All users, or what choosing none means there.
-fn fill(id: &str, departments: &[(i32, String)]) {
+pub(crate) fn fill(id: &str, departments: &[(i32, String)]) {
     let list = element(id).unchecked_into::<HtmlSelectElement>();
     let chosen = list.value();
     let first = list.first_element_child().unwrap();
@@ -549,6 +562,7 @@ pub fn setup(state: Rc<RefCell<State>>) {
     let disconnect_state = state.clone();
     on_click("net2-disconnect", move || {
         crate::portrait_client::forget_matches();
+        crate::manage_client::forget_people();
         let mut state = disconnect_state.borrow_mut();
         state.net2 = None;
         state.net2_status = (Tone::Idle, "Disconnected".into());

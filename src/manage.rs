@@ -1,7 +1,7 @@
 //! Changes to people already in Net2, without the browser: the year change
 //! that moves every year group up, and the record that marks someone a leaver.
 //! `manage_client` makes the requests.
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use serde_json::Value;
 
@@ -37,52 +37,66 @@ impl Step {
 /// keeps their department and nobody is moved one at a time. The top year
 /// becomes `leavers` and a new, empty lowest year is made.
 ///
-/// Renaming runs from the top down, so no name is ever taken twice. The
-/// `years` are given, never the ones found: after a stopped run, the highest
-/// left is the year below the top, and the lowest has not been made yet. A step whose new name is already taken counts as done, so
-/// planning again after a stop finishes the change instead of moving anyone
-/// up twice. That is also why an existing `leavers` department means the
-/// change is already done this year.
+/// Each rename moves the vacant year down one place. Requiring a complete
+/// range at the start lets a resumed run identify that vacancy from Net2
+/// alone, including when departments use different spellings of "Year".
 pub fn promotion(
     departments: &[(i32, String)],
     years: std::ops::RangeInclusive<u8>,
     leavers: &str,
-) -> Vec<Step> {
+) -> Result<Vec<Step>, String> {
     let (lowest, top) = (*years.start(), *years.end());
-    let mut taken: HashSet<String> = departments.iter().map(|(_, n)| n.to_lowercase()).collect();
-    let found: BTreeMap<u8, (i32, &str, &String)> = departments
+    if year_of(leavers).is_some() {
+        return Err("Choose a leavers name that is distinct from a year group.".into());
+    }
+    let mut found = BTreeMap::new();
+    for (id, name) in departments {
+        if let Some((prefix, year)) = year_of(name)
+            && years.contains(&year)
+            && found.insert(year, (*id, prefix, name)).is_some()
+        {
+            return Err(format!(
+                "Net2 has more than one department for year {year}."
+            ));
+        }
+    }
+    if found.is_empty() {
+        return Ok(Vec::new());
+    }
+    let leavers_exists = departments
         .iter()
-        .filter_map(|(id, name)| year_of(name).map(|(prefix, n)| (n, (*id, prefix, name))))
-        .filter(|(n, _)| years.contains(n))
-        .collect();
-    // The new year is named like the others.
-    let Some(&(_, prefix, _)) = found.values().next() else {
-        return Vec::new();
-    };
+        .any(|(_, name)| name.eq_ignore_ascii_case(leavers));
+    let gaps: Vec<_> = years.filter(|year| !found.contains_key(year)).collect();
     let mut steps = Vec::new();
-    for n in years.rev() {
-        let Some(&(id, prefix, from)) = found.get(&n) else {
-            continue;
-        };
-        let to = if n == top {
-            leavers.to_string()
-        } else {
-            format!("{prefix}{}", n + 1)
-        };
-        if taken.insert(to.to_lowercase()) {
-            taken.remove(&from.to_lowercase());
+    let vacant = match (leavers_exists, gaps.as_slice()) {
+        (true, []) => return Ok(steps),
+        (true, &[year]) => year,
+        (false, []) => {
+            let (id, _, from) = found[&top];
             steps.push(Step::Rename {
                 id,
                 from: from.clone(),
-                to,
+                to: leavers.into(),
             });
+            top
         }
+        _ => {
+            return Err(format!(
+                "Missing year departments {gaps:?}. Check the selected range and leavers name in Net2."
+            ));
+        }
+    };
+    for n in (lowest..vacant).rev() {
+        let (id, prefix, from) = found[&n];
+        steps.push(Step::Rename {
+            id,
+            from: from.clone(),
+            to: format!("{prefix}{}", n + 1),
+        });
     }
-    let first = format!("{prefix}{lowest}");
-    if !taken.contains(&first.to_lowercase()) {
-        steps.push(Step::Create(first));
-    }
-    steps
+    let (_, prefix, _) = found.values().next().unwrap();
+    steps.push(Step::Create(format!("{prefix}{lowest}")));
+    Ok(steps)
 }
 
 /// The user as Net2 sent it, with only the expiry changed to the end of
@@ -93,12 +107,7 @@ pub fn promotion(
 /// `Ok(None)` when their access already ends sooner: marking someone a
 /// leaver must never give back access that has ended.
 pub fn with_expiry(body: &str, expected: i32, last_day: &str) -> Result<Option<Value>, String> {
-    let shaped = last_day.len() == 10
-        && last_day.bytes().enumerate().all(|(i, b)| match i {
-            4 | 7 => b == b'-',
-            _ => b.is_ascii_digit(),
-        });
-    if !shaped {
+    if crate::people::read_date(last_day)?.as_deref() != Some(last_day) {
         return Err("Choose the last day they can get in.".into());
     }
     let current = crate::net2::read_user(body, expected)?;
@@ -108,20 +117,83 @@ pub fn with_expiry(body: &str, expected: i32, last_day: &str) -> Result<Option<V
     {
         return Ok(None);
     }
-    let mut user: Value = serde_json::from_str(body).map_err(|_| UNEXPECTED.to_string())?;
+    expiry_record(body, Some(last_day)).map(Some)
+}
+
+/// Explicitly change or clear an existing expiry, preserving the other fields.
+pub fn undo_expiry(
+    body: &str,
+    expected: i32,
+    last_day: Option<&str>,
+) -> Result<Option<Value>, String> {
+    if let Some(day) = last_day
+        && crate::people::read_date(day)?.as_deref() != Some(day)
+    {
+        return Err("Choose a valid expiry date.".into());
+    }
+    if crate::net2::read_user(body, expected)?.expires.is_none() {
+        return Ok(None);
+    }
+    expiry_record(body, last_day).map(Some)
+}
+
+fn expiry_record(body: &str, last_day: Option<&str>) -> Result<Value, String> {
+    let mut user: Value = serde_json::from_str(body).map_err(|_| UNEXPECTED)?;
     let record = user.as_object_mut().ok_or(UNEXPECTED)?;
-    // Net2 documents camelCase but has sent PascalCase: keep its spelling,
-    // and never send both.
-    let key = if record.contains_key("Id") {
-        "ExpiryDate"
-    } else {
-        "expiryDate"
-    };
-    record.insert(key.into(), format!("{last_day}T23:59:00").into());
-    Ok(Some(user))
+    let mut keys = record
+        .keys()
+        .filter(|key| key.eq_ignore_ascii_case("expiryDate"));
+    let key = keys.next().cloned();
+    if keys.next().is_some() {
+        return Err(UNEXPECTED.into());
+    }
+    let key = key.unwrap_or_else(|| {
+        if record.contains_key("Id") {
+            "ExpiryDate"
+        } else {
+            "expiryDate"
+        }
+        .into()
+    });
+    let expiry = last_day.map_or(Value::Null, |date| format!("{date}T23:59:00").into());
+    record.insert(key, expiry);
+    Ok(user)
 }
 
 const UNEXPECTED: &str = "Net2 sent a reply Tusk does not understand.";
+
+/// Change only the selected access level in the full permission set.
+pub fn with_level(body: &str, level: i32, add: bool) -> Result<Option<Value>, String> {
+    let mut permissions: Value = serde_json::from_str(body).map_err(|_| UNEXPECTED)?;
+    let record = permissions.as_object_mut().ok_or(UNEXPECTED)?;
+    let (levels, individual) = if record.contains_key("AccessLevels") {
+        ("AccessLevels", "IndividualPermissions")
+    } else {
+        ("accessLevels", "individualPermissions")
+    };
+    if !record.get(individual).is_some_and(Value::is_array)
+        || !record.get(levels).is_some_and(Value::is_array)
+    {
+        return Err(UNEXPECTED.into());
+    }
+    let levels = record.get_mut(levels).unwrap().as_array_mut().unwrap();
+    if levels
+        .iter()
+        .any(|id| id.as_i64().and_then(|id| i32::try_from(id).ok()).is_none())
+    {
+        return Err(UNEXPECTED.into());
+    }
+    let level = Value::from(level);
+    if levels.contains(&level) == add {
+        return Ok(None);
+    }
+    if add {
+        levels.push(level);
+    } else {
+        levels.retain(|id| *id != level);
+    }
+    Ok(Some(permissions))
+}
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
@@ -166,7 +238,7 @@ mod tests {
 
     #[test]
     fn every_year_moves_up_and_a_new_lowest_year_is_made() {
-        let steps = promotion(&school(&SCHOOL), 7..=13, "Leavers 2027");
+        let steps = promotion(&school(&SCHOOL), 7..=13, "Leavers 2027").unwrap();
         let described: Vec<_> = steps.iter().map(Step::describe).collect();
         assert_eq!(
             described,
@@ -185,16 +257,18 @@ mod tests {
 
     /// Whatever step a run stops after, planning again finishes it with
     /// everyone exactly one year up, and a finished change plans nothing.
-    #[test]
-    fn a_stopped_year_change_finishes_without_moving_anyone_twice() {
-        let fresh = school(&SCHOOL);
-        let steps = promotion(&fresh, 7..=13, "Leavers 2027");
+    #[rstest]
+    #[case::same_prefix(&SCHOOL)]
+    #[case::mixed_prefixes(&["Y7", "Year 8", "Y9", "Year 10", "Y11", "Year 12", "Y13"])]
+    fn a_stopped_year_change_finishes_without_moving_anyone_twice(#[case] names_before: &[&str]) {
+        let fresh = school(names_before);
+        let steps = promotion(&fresh, 7..=13, "Leavers 2027").unwrap();
         let mut whole = fresh.clone();
         apply(&mut whole, &steps);
         for done in 0..=steps.len() {
             let mut departments = fresh.clone();
             apply(&mut departments, &steps[..done]);
-            let rest = promotion(&departments, 7..=13, "Leavers 2027");
+            let rest = promotion(&departments, 7..=13, "Leavers 2027").unwrap();
             apply(&mut departments, &rest);
             assert_eq!(
                 names(&departments),
@@ -202,7 +276,7 @@ mod tests {
                 "stopped after {done} steps"
             );
             assert_eq!(
-                promotion(&departments, 7..=13, "Leavers 2027"),
+                promotion(&departments, 7..=13, "Leavers 2027").unwrap(),
                 [],
                 "after {done} steps"
             );
@@ -213,14 +287,13 @@ mod tests {
     #[case::year_and_a_space(&["Year 10", "Year 11"], 10..=11, &["Year 11 becomes Leavers", "Year 10 becomes Year 11", "a new, empty Year 10"])]
     #[case::lower_case(&["year7", "year8"], 7..=8, &["year8 becomes Leavers", "year7 becomes year8", "a new, empty year7"])]
     #[case::not_year_groups(&["Yellow", "Year 12 tutors", "Y12a", "Staff"], 7..=13, &[])]
-    #[case::years_outside_the_range_are_left_alone(&["Y6", "Y11", "Y12"], 7..=11, &["Y11 becomes Leavers", "a new, empty Y7"])]
-    #[case::a_missing_middle_year_is_skipped(&["Y7", "Y9"], 7..=9, &["Y9 becomes Leavers", "Y7 becomes Y8", "a new, empty Y7"])]
+    #[case::years_outside_the_range_are_left_alone(&["Y6", "Y10", "Y11", "Y12"], 10..=11, &["Y11 becomes Leavers", "Y10 becomes Y11", "a new, empty Y10"])]
     fn only_year_groups_in_the_range_move(
         #[case] departments: &[&str],
         #[case] years: std::ops::RangeInclusive<u8>,
         #[case] expected: &[&str],
     ) {
-        let steps = promotion(&school(departments), years, "Leavers");
+        let steps = promotion(&school(departments), years, "Leavers").unwrap();
         let described: Vec<_> = steps.iter().map(Step::describe).collect();
         assert_eq!(described, expected);
     }
@@ -230,7 +303,38 @@ mod tests {
     #[test]
     fn an_existing_leavers_department_counts_as_this_years_change_done() {
         let departments = school(&["Y12", "Y13", "leavers 2027"]);
-        assert_eq!(promotion(&departments, 12..=13, "Leavers 2027"), []);
+        assert_eq!(
+            promotion(&departments, 12..=13, "Leavers 2027").unwrap(),
+            []
+        );
+    }
+
+    #[rstest]
+    #[case::gap(&["Y7", "Y9"])]
+    #[case::duplicate_year(&["Y7", "Year 7", "Y8", "Y9"])]
+    fn ambiguous_year_groups_are_refused(#[case] departments: &[&str]) {
+        assert!(promotion(&school(departments), 7..=9, "Leavers 2027").is_err());
+    }
+
+    #[test]
+    fn refuses_to_replace_permissions_if_net2_omits_part_of_the_set() {
+        assert!(with_level(r#"{"accessLevels":[1]}"#, 2, true).is_err());
+        assert!(
+            with_level(
+                r#"{"accessLevels":[null],"individualPermissions":[]}"#,
+                2,
+                true
+            )
+            .is_err()
+        );
+        assert_eq!(
+            with_level(
+                r#"{"AccessLevels":[1],"IndividualPermissions":[]}"#,
+                1,
+                true
+            ),
+            Ok(None)
+        );
     }
 
     #[test]

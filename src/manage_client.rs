@@ -14,11 +14,11 @@ use web_sys::{HtmlButtonElement, HtmlInputElement, HtmlSelectElement};
 
 use crate::{
     client::{element, on_click},
-    manage::{Step, promotion, with_expiry},
-    net2::{Failure, User, failure, read_named, read_users},
-    net2_client::{call, load_departments, today},
+    manage::{Step, promotion, undo_expiry, with_expiry, with_level},
+    net2::{Failure, TOKEN_TYPES, User, failure, read_named, read_user, read_users},
+    net2_client::{call, card_type, fill, load_departments, save_card, today},
     portrait_client::{PACE_MS, sleep},
-    reader::{State, Tool},
+    reader::{State, Tone, Tool},
 };
 
 struct Row {
@@ -29,12 +29,19 @@ struct Row {
     problem: bool,
 }
 
+struct PurgeReview {
+    cutoff: String,
+    candidates: Vec<User>,
+    downloaded: bool,
+}
+
 thread_local! {
     static ROWS: RefCell<Vec<Row>> = const { RefCell::new(Vec::new()) };
     /// Who the table shows; empty until people are shown.
     static SHOWN: RefCell<String> = const { RefCell::new(String::new()) };
     static BUSY: Cell<bool> = const { Cell::new(false) };
-    static STOP: Cell<bool> = const { Cell::new(false) };
+    static STOP: Cell<Option<bool>> = const { Cell::new(None) };
+    static PURGE: RefCell<Option<PurgeReview>> = const { RefCell::new(None) };
 }
 
 fn input(id: &str) -> HtmlInputElement {
@@ -49,7 +56,7 @@ fn notice(text: &str) {
     element("manage-notice").set_text_content(Some(text));
 }
 
-fn confirmed(question: &str) -> bool {
+pub(super) fn confirmed(question: &str) -> bool {
     web_sys::window()
         .unwrap()
         .confirm_with_message(question)
@@ -58,7 +65,7 @@ fn confirmed(question: &str) -> bool {
 
 /// The department picked in a list, with its name, or None for the list's
 /// first option.
-fn picked(id: &str) -> Option<(i32, String)> {
+pub(super) fn picked(id: &str) -> Option<(i32, String)> {
     let list = element(id).unchecked_into::<HtmlSelectElement>();
     let value = list.value().parse().ok()?;
     let option = list.query_selector("option:checked").ok().flatten()?;
@@ -72,12 +79,37 @@ fn people(count: usize) -> String {
     }
 }
 
+pub(super) fn selected_person() -> Option<User> {
+    ROWS.with_borrow(|rows| {
+        let mut ticked = rows.iter().filter(|row| row.ticked);
+        let person = ticked.next()?.user.clone();
+        ticked.next().is_none().then_some(person)
+    })
+}
+
 fn ends(user: &User, today: &str) -> String {
     match &user.expires {
         Some(date) if user.expired(today) => format!("{date} (ended)"),
         Some(date) => date.clone(),
         None => String::new(),
     }
+}
+
+pub(crate) fn busy() -> bool {
+    BUSY.get()
+}
+
+pub(super) fn site_busy(state: &Rc<RefCell<State>>, busy: bool) {
+    BUSY.set(busy);
+    crate::client::render(&state.borrow());
+}
+
+pub(crate) fn forget_people() {
+    PURGE.set(None);
+    SHOWN.set(String::new());
+    ROWS.with_borrow_mut(|rows| rows.iter_mut().for_each(|row| row.ticked = false));
+    fill("manage-level", &[]);
+    crate::manage_site_client::forget();
 }
 
 pub fn render(state: &State) {
@@ -87,9 +119,11 @@ pub fn render(state: &State) {
     }
     let busy = BUSY.get();
     let connected = state.net2.is_some();
-    button("manage-stop").set_hidden(!busy);
+    crate::manage_site_client::render(connected && !busy, selected_person().is_some());
+    button("manage-stop").set_hidden(!busy || STOP.get().is_none());
     button("manage-load").set_disabled(busy || !connected);
     button("manage-promote").set_disabled(busy || !connected);
+    button("manage-load-levels").set_disabled(busy || !connected);
     SHOWN.with_borrow(|shown| {
         element("manage-list").set_hidden(shown.is_empty());
         element("manage-heading").set_text_content(Some(shown));
@@ -98,6 +132,25 @@ pub fn render(state: &State) {
     ROWS.with_borrow(|rows| {
         let ticked = rows.iter().filter(|r| r.ticked).count();
         let ready = !busy && connected && ticked > 0;
+        button("manage-preview-purge").set_disabled(!ready);
+        PURGE.with_borrow(|review| {
+            button("manage-download-purge").set_disabled(!ready || review.is_none());
+            button("manage-purge")
+                .set_disabled(!ready || !review.as_ref().is_some_and(|review| review.downloaded));
+        });
+        button("manage-add-level").set_disabled(!ready);
+        button("manage-remove-level").set_disabled(!ready);
+        button("manage-undo").set_disabled(!ready);
+        let card = state
+            .card
+            .as_ref()
+            .filter(|_| state.status.0 == Tone::Ready);
+        button("manage-replace").set_disabled(!ready || ticked != 1 || card.is_none());
+        let card_note = match (ticked, card) {
+            (1, Some(card)) => format!("Card {} is on the reader.", card.number),
+            _ => "Tick one person and tap their new card.".into(),
+        };
+        element("manage-card").set_text_content(Some(&card_note));
         let moving = button("manage-move");
         moving.set_disabled(!ready);
         moving.set_text_content(Some(&match ticked {
@@ -142,6 +195,7 @@ pub fn render(state: &State) {
 }
 
 async fn show(state: Rc<RefCell<State>>) {
+    PURGE.set(None);
     let department = picked("manage-department");
     let (path, label) = match &department {
         Some((id, name)) => (format!("/departments/{id}/users"), name.clone()),
@@ -206,8 +260,10 @@ where
     F: Fn(i32) -> Fut,
     Fut: Future<Output = Result<String, Failure>>,
 {
+    PURGE.set(None);
     BUSY.set(true);
-    STOP.set(false);
+    STOP.set(Some(false));
+    crate::client::render(&state.borrow());
     let todo: Vec<(usize, i32)> = ROWS.with_borrow(|rows| {
         let ticked = rows.iter().enumerate().filter(|(_, row)| row.ticked);
         ticked.map(|(index, row)| (index, row.user.id)).collect()
@@ -215,12 +271,12 @@ where
     let mut done = 0;
     let mut halted = false;
     for (position, &(index, id)) in todo.iter().enumerate() {
-        if STOP.get() {
-            halted = true;
-            break;
-        }
         if position > 0 {
             sleep(PACE_MS).await;
+        }
+        if STOP.get() == Some(true) {
+            halted = true;
+            break;
         }
         notice(&format!("{doing} {} of {}…", position + 1, todo.len()));
         let outcome = change(id).await;
@@ -238,12 +294,120 @@ where
         }
     }
     BUSY.set(false);
+    STOP.set(None);
     notice(&format!(
         "{} {done} of {} done.",
         if halted { "Stopped." } else { "Done." },
         todo.len()
     ));
     crate::client::render(&state.borrow());
+}
+
+fn preview_purge() {
+    PURGE.set(None);
+    let Ok(years) = input("manage-retention").value().parse::<u32>() else {
+        return notice("Enter how many years to keep expired records.");
+    };
+    if !(1..=100).contains(&years) {
+        return notice("Enter a retention period from 1 to 100 years.");
+    }
+    let now = js_sys::Date::new_0();
+    let year = now.get_full_year() - years;
+    let month = now.get_month() + 1;
+    let day = now.get_date();
+    let mut cutoff = format!("{year:04}-{month:02}-{day:02}");
+    if crate::people::read_date(&cutoff).is_err() {
+        cutoff = format!("{year:04}-02-28");
+    }
+    let candidates = ROWS.with_borrow(|rows| {
+        rows.iter()
+            .filter(|row| row.ticked && row.user.expired(&cutoff))
+            .map(|row| row.user.clone())
+            .collect::<Vec<_>>()
+    });
+    if candidates.is_empty() {
+        return notice(&format!("No ticked records expired before {cutoff}."));
+    }
+    if !confirmed(&format!(
+        "Review {} whose Net2 access expired before {cutoff}? Review only people whose records you intend to purge.",
+        people(candidates.len())
+    )) {
+        return;
+    }
+    ROWS.with_borrow_mut(|rows| {
+        for row in rows.iter_mut().filter(|row| row.ticked) {
+            row.result = if row.user.expired(&cutoff) {
+                "Eligible for purge"
+            } else {
+                "Outside purge cutoff"
+            }
+            .into();
+            row.problem = false;
+        }
+    });
+    notice(&format!(
+        "{} eligible. Download the review before purging.",
+        people(candidates.len())
+    ));
+    PURGE.set(Some(PurgeReview {
+        cutoff,
+        candidates,
+        downloaded: false,
+    }));
+}
+
+fn download_purge() {
+    PURGE.with_borrow_mut(|review| {
+        let Some(review) = review else { return };
+        let headers = ["User ID", "Access ends", "Purge cutoff", "Result"].map(String::from);
+        let rows = review.candidates.iter().map(|user| {
+            vec![
+                user.id.to_string(),
+                user.expires.clone().unwrap_or_default(),
+                review.cutoff.clone(),
+                "Eligible for purge".into(),
+            ]
+        });
+        match crate::sheet::write_csv(&headers, rows, false)
+            .and_then(|bytes| crate::batch_client::save(&bytes, "net2-purge-review.csv"))
+        {
+            Ok(()) => {
+                review.downloaded = true;
+                notice("Review sent to Downloads. Check the file before confirming the purge.");
+            }
+            Err(text) => notice(&text),
+        }
+    });
+}
+
+async fn purge_leavers(state: Rc<RefCell<State>>, review: PurgeReview) {
+    each_ticked(&state, "Checking purge for", |id| {
+        let state = state.clone();
+        let reviewed = review.candidates.iter().find(|user| user.id == id).cloned();
+        async move {
+            let Some(reviewed) = reviewed else {
+                return Ok("Outside purge cutoff.".into());
+            };
+            let path = format!("/users/{id}");
+            let body = call(&state, "GET", &path, None).await?;
+            let current = read_user(&body, id).map_err(|text| failure(text, false, false))?;
+            if current.expires != reviewed.expires || current.name() != reviewed.name() {
+                return Err(failure(
+                    "User changed since the review. Review again.",
+                    false,
+                    false,
+                ));
+            }
+            call(&state, "DELETE", &format!("{path}?purge=true"), None).await?;
+            ROWS.with_borrow_mut(|rows| {
+                if let Some(row) = rows.iter_mut().find(|row| row.user.id == id) {
+                    row.ticked = false;
+                }
+            });
+            Ok("Purged user and history.".into())
+        }
+    })
+    .await;
 }
 
 async fn put_in(
@@ -269,6 +433,120 @@ async fn move_ticked(state: Rc<RefCell<State>>, department: (i32, String)) {
         async move {
             put_in(&state, user, &department).await?;
             Ok(format!("Moved to {}.", department.1))
+        }
+    })
+    .await;
+}
+
+async fn load_levels(state: Rc<RefCell<State>>) {
+    BUSY.set(true);
+    crate::client::render(&state.borrow());
+    match call(&state, "GET", "/accesslevels", None).await {
+        Ok(body) => {
+            let levels = read_named(&body);
+            fill("manage-level", &levels);
+            notice(&format!("{} access levels available.", levels.len()));
+        }
+        Err(problem) => notice(&problem.message),
+    }
+    BUSY.set(false);
+    crate::client::render(&state.borrow());
+}
+
+async fn change_level(state: Rc<RefCell<State>>, level: (i32, String), add: bool) {
+    each_ticked(&state, "Updating access for", |user| {
+        let (state, (id, name)) = (state.clone(), level.clone());
+        async move {
+            let path = format!("/users/{user}/doorpermissionset");
+            let body = call(&state, "GET", &path, None).await?;
+            let change = with_level(&body, id, add).map_err(|text| failure(text, false, false))?;
+            let Some(change) = change else {
+                return Ok(if add {
+                    format!("Already has {name}.")
+                } else {
+                    format!("Already without {name}.")
+                });
+            };
+            call(&state, "PUT", &path, Some(&change)).await?;
+            // Net2 answers 204 but may keep only the first access level.
+            let kept = call(&state, "GET", &path, None)
+                .await
+                .is_ok_and(|reply| with_level(&reply, id, add) == Ok(None));
+            if !kept {
+                return Err(failure(
+                    format!(
+                        "Net2 did not save the change to {name}. It may allow only one access level per person: check them in Net2."
+                    ),
+                    false,
+                    true,
+                ));
+            }
+            Ok(if add {
+                format!("Added {name}.")
+            } else {
+                format!("Removed {name}.")
+            })
+        }
+    })
+    .await;
+}
+
+async fn replace_card(state: Rc<RefCell<State>>, number: u32, kind: String) {
+    let value = number.to_string();
+    each_ticked(&state, "Replacing card for", |user| {
+        let (state, value, kind) = (state.clone(), value.clone(), kind.clone());
+        async move {
+            let result = save_card(&state, user, &value, &kind, true, true).await?;
+            let retired = result
+                .map_err(|card| failure(format!("Already has card {card}."), false, false))?;
+            if state
+                .borrow()
+                .card
+                .as_ref()
+                .is_some_and(|card| card.number == number)
+            {
+                state.borrow_mut().manage_assigned = Some(number);
+            }
+            Ok(format!("Saved card {value}.{retired}"))
+        }
+    })
+    .await;
+}
+
+async fn undo_leavers(state: Rc<RefCell<State>>, date: Option<String>) {
+    each_ticked(&state, "Updating expiry for", |user| {
+        let (state, date) = (state.clone(), date.clone());
+        async move {
+            let path = format!("/users/{user}");
+            let original = call(&state, "GET", &path, None).await?;
+            let record = undo_expiry(&original, user, date.as_deref())
+                .map_err(|message| failure(message, false, false))?;
+            let Some(record) = record else {
+                return Ok("Access already has no expiry.".into());
+            };
+            sleep(PACE_MS).await;
+            call(&state, "PUT", &path, Some(&record)).await?;
+            sleep(PACE_MS).await;
+            let verified = call(&state, "GET", &path, None)
+                .await
+                .ok()
+                .and_then(|reply| read_user(&reply, user).ok());
+            if !verified.as_ref().is_some_and(|user| user.expires == date) {
+                return Err(failure(
+                    "Net2 did not confirm the new expiry. Check the user in Net2.",
+                    true,
+                    true,
+                ));
+            }
+            ROWS.with_borrow_mut(|rows| {
+                if let Some(row) = rows.iter_mut().find(|row| row.user.id == user) {
+                    row.user.expires = date.clone();
+                }
+            });
+            Ok(date.map_or_else(
+                || "Expiry cleared.".into(),
+                |day| format!("Access ends after {day}."),
+            ))
         }
     })
     .await;
@@ -342,11 +620,12 @@ async fn year_change(state: Rc<RefCell<State>>) {
         return notice("The top year must be above the lowest, and the top year needs a new name.");
     }
     BUSY.set(true);
-    STOP.set(false);
+    STOP.set(Some(false));
     notice("Reading Net2’s departments…");
     crate::client::render(&state.borrow());
     let finish = |message: &str| {
         BUSY.set(false);
+        STOP.set(None);
         notice(message);
         crate::client::render(&state.borrow());
     };
@@ -354,7 +633,10 @@ async fn year_change(state: Rc<RefCell<State>>) {
         Ok(reply) => read_named(&reply),
         Err(problem) => return finish(&problem.message),
     };
-    let steps = promotion(&departments, lowest..=top, &leavers);
+    let steps = match promotion(&departments, lowest..=top, &leavers) {
+        Ok(steps) => steps,
+        Err(message) => return finish(&message),
+    };
     if steps.is_empty() {
         return finish(&if departments
             .iter()
@@ -376,18 +658,28 @@ async fn year_change(state: Rc<RefCell<State>>) {
         steps.len(),
         plan.join("\n")
     );
+    let question = if departments
+        .iter()
+        .any(|(_, name)| name.eq_ignore_ascii_case(&leavers))
+    {
+        format!(
+            "Resume a stopped year change only if {leavers} already contains the original top year.\n\n{question}"
+        )
+    } else {
+        question
+    };
     if !confirmed(&question) {
         return finish("Nothing changed.");
     }
     let mut made = 0;
     let mut stopped = None;
     for step in &steps {
-        if STOP.get() {
-            stopped = Some("you stopped it.".to_string());
-            break;
-        }
         if made > 0 {
             sleep(PACE_MS).await;
+        }
+        if STOP.get() == Some(true) {
+            stopped = Some("you stopped it.".to_string());
+            break;
         }
         notice(&format!(
             "Year change: {} ({} of {})…",
@@ -433,6 +725,7 @@ async fn year_change(state: Rc<RefCell<State>>) {
 }
 
 pub fn setup(state: Rc<RefCell<State>>) {
+    crate::manage_site_client::setup(&state);
     input("manage-leave-date").set_value(&today());
     input("manage-leavers-name").set_value(&format!(
         "Leavers {}",
@@ -458,6 +751,7 @@ pub fn setup(state: Rc<RefCell<State>>) {
                 row.ticked = tick.checked();
             }
         });
+        PURGE.set(None);
         crate::client::render(&tick_state.borrow());
     });
     element("manage-rows").set_onchange(Some(callback.as_ref().unchecked_ref()));
@@ -467,6 +761,7 @@ pub fn setup(state: Rc<RefCell<State>>) {
     let callback = Closure::<dyn FnMut()>::new(move || {
         let checked = input("manage-all").checked();
         ROWS.with_borrow_mut(|rows| rows.iter_mut().for_each(|row| row.ticked = checked));
+        PURGE.set(None);
         crate::client::render(&all_state.borrow());
     });
     element("manage-all").set_onchange(Some(callback.as_ref().unchecked_ref()));
@@ -474,9 +769,102 @@ pub fn setup(state: Rc<RefCell<State>>) {
 
     let show_state = state.clone();
     on_click("manage-load", move || spawn_local(show(show_state.clone())));
-    on_click("manage-stop", || STOP.set(true));
+    on_click("manage-stop", || STOP.set(Some(true)));
+    let retention_state = state.clone();
+    let callback = Closure::<dyn FnMut()>::new(move || {
+        PURGE.set(None);
+        crate::client::render(&retention_state.borrow());
+    });
+    element("manage-retention").set_oninput(Some(callback.as_ref().unchecked_ref()));
+    callback.forget();
+    let preview_state = state.clone();
+    on_click("manage-preview-purge", move || {
+        preview_purge();
+        crate::client::render(&preview_state.borrow());
+    });
+    let download_state = state.clone();
+    on_click("manage-download-purge", move || {
+        download_purge();
+        crate::client::render(&download_state.borrow());
+    });
+    let purge_state = state.clone();
+    on_click("manage-purge", move || {
+        let count = PURGE.with_borrow(|review| {
+            review
+                .as_ref()
+                .filter(|review| review.downloaded)
+                .map(|r| r.candidates.len())
+        });
+        let Some(count) = count else { return };
+        if confirmed(&format!(
+            "Permanently purge {} and their historical data from Net2? Check that the review downloaded. This cannot be undone.",
+            people(count)
+        )) && let Some(review) = PURGE.take()
+        {
+            spawn_local(purge_leavers(purge_state.clone(), review));
+        }
+    });
 
+    let levels_state = state.clone();
+    on_click("manage-load-levels", move || {
+        spawn_local(load_levels(levels_state.clone()))
+    });
     let ticked = || ROWS.with_borrow(|rows| rows.iter().filter(|row| row.ticked).count());
+    let undo_state = state.clone();
+    on_click("manage-undo", move || {
+        let day = input("manage-undo-date").value();
+        let (date, action) = if day.is_empty() {
+            (None, "Clear the expiry".into())
+        } else {
+            let action = format!("Set the expiry to 23:59 on {day}");
+            (Some(day), action)
+        };
+        if confirmed(&format!(
+            "{action} for {}? This may restore access.",
+            people(ticked())
+        )) {
+            spawn_local(undo_leavers(undo_state.clone(), date));
+        }
+    });
+    for (button, add, verb) in [
+        ("manage-add-level", true, "Add"),
+        ("manage-remove-level", false, "Remove"),
+    ] {
+        let state = state.clone();
+        on_click(button, move || {
+            let Some(level) = picked("manage-level") else {
+                return notice("Load and choose an access level.");
+            };
+            let direction = if add { "to" } else { "from" };
+            if confirmed(&format!(
+                "{verb} {} {direction} {} in Net2?",
+                level.1,
+                people(ticked())
+            )) {
+                spawn_local(change_level(state.clone(), level, add));
+            }
+        });
+    }
+    let card_state = state.clone();
+    on_click("manage-replace", move || {
+        let person = selected_person();
+        let number = card_state.borrow().card.as_ref().map(|card| card.number);
+        let (Some(person), Some(number)) = (person, number) else {
+            return notice("Tick one person and tap their new card.");
+        };
+        let kind = card_type();
+        let Some((_, label)) = TOKEN_TYPES.iter().find(|(value, _)| *value == kind) else {
+            return notice("Choose a card type on Batch assign cards first.");
+        };
+        if confirmed(&format!(
+            "Save card {number} ({label}) for {} (Net2 ID {})? Their other active cards will be marked lost after the new card is saved.",
+            person.name(),
+            person.id
+        )) {
+            spawn_local(replace_card(card_state.clone(), number, kind));
+        }
+    });
+
     let move_state = state.clone();
     on_click("manage-move", move || {
         let Some(department) = picked("manage-move-to") else {
