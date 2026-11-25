@@ -90,7 +90,8 @@ pub struct Person {
     pub middle: String,
     pub last: String,
     pub department: String,
-    /// Net2 access level names, as the sheet gives them.
+    /// The Net2 access level name, as the sheet gives it: at most one, as
+    /// Net2 gives each person one access level.
     pub access_levels: Vec<String>,
     pub activate: Option<String>,
     pub expiry: Option<String>,
@@ -115,8 +116,8 @@ impl Person {
             middle: get(MIDDLE).into(),
             last: get(SURNAME).into(),
             department: get(DEPARTMENT).into(),
-            // Several in one cell as `Working hours; Car park`: Net2's own
-            // names can hold commas.
+            // Split on `;` only to refuse several below: Net2's own names
+            // can hold commas.
             access_levels: get(ACCESS_LEVELS)
                 .split(';')
                 .map(str::trim)
@@ -132,6 +133,9 @@ impl Person {
         };
         if person.first.is_empty() && person.last.is_empty() {
             return Err("No first name or surname.".into());
+        }
+        if person.access_levels.len() > 1 {
+            return Err("Net2 gives each person one access level: choose one.".into());
         }
         if let (Some(from), Some(until)) = (&person.activate, &person.expiry)
             && until < from
@@ -325,7 +329,7 @@ mod tests {
                 "0123",
                 "S1234",
                 r"C:\photos\riya.jpg",
-                " Working hours, weekdays ;; Car park ",
+                " Working hours, weekdays ; ",
                 "",
                 "0",
             ]),
@@ -337,10 +341,7 @@ mod tests {
             (person.name().as_str(), person.photo.as_str()),
             ("Riya Patel", "riya.jpg")
         );
-        assert_eq!(
-            person.access_levels,
-            ["Working hours, weekdays", "Car park"]
-        );
+        assert_eq!(person.access_levels, ["Working hours, weekdays"]);
         assert_eq!(
             person.body(),
             json!({
@@ -361,6 +362,10 @@ mod tests {
         assert_that!(
             read(&["Doe", "", "", "12a4", "", "", "", "", ""]),
             err(anything())
+        );
+        assert_that!(
+            read(&["Doe", "", "", "", "", "", "Working hours; Car park", "", ""]),
+            err(contains_substring("one access level"))
         );
         let town = "x".repeat(51);
         assert_eq!(

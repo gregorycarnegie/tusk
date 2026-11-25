@@ -162,8 +162,10 @@ fn expiry_record(body: &str, last_day: Option<&str>) -> Result<Value, String> {
 
 const UNEXPECTED: &str = "Net2 sent a reply Tusk does not understand.";
 
-/// Change only the selected access level in the full permission set.
-pub fn with_level(body: &str, level: i32, add: bool) -> Result<Option<Value>, String> {
+/// The permission set with `level` as the person's only access level (`set`),
+/// or without it, keeping their individual door permissions. Net2 gives each
+/// person one access level: given several, it keeps the first.
+pub fn with_level(body: &str, level: i32, set: bool) -> Result<Option<Value>, String> {
     let mut permissions: Value = serde_json::from_str(body).map_err(|_| UNEXPECTED)?;
     let record = permissions.as_object_mut().ok_or(UNEXPECTED)?;
     let (levels, individual) = if record.contains_key("AccessLevels") {
@@ -184,11 +186,16 @@ pub fn with_level(body: &str, level: i32, add: bool) -> Result<Option<Value>, St
         return Err(UNEXPECTED.into());
     }
     let level = Value::from(level);
-    if levels.contains(&level) == add {
+    let done = if set {
+        *levels == [level.clone()]
+    } else {
+        !levels.contains(&level)
+    };
+    if done {
         return Ok(None);
     }
-    if add {
-        levels.push(level);
+    if set {
+        *levels = vec![level];
     } else {
         levels.retain(|id| *id != level);
     }
@@ -335,6 +342,28 @@ mod tests {
             ),
             Ok(None)
         );
+    }
+
+    #[test]
+    fn setting_a_level_replaces_the_old_one_and_keeps_door_permissions() {
+        let set = r#"{"accessLevels":[1],"individualPermissions":[{"id":42,"timezoneId":3}]}"#;
+        assert_eq!(
+            with_level(set, 2, true),
+            Ok(Some(serde_json::json!({
+                "accessLevels": [2], "individualPermissions": [{"id": 42, "timezoneId": 3}],
+            })))
+        );
+        assert_eq!(
+            with_level(
+                r#"{"accessLevels":[2],"individualPermissions":[]}"#,
+                2,
+                false
+            ),
+            Ok(Some(
+                serde_json::json!({"accessLevels": [], "individualPermissions": []})
+            ))
+        );
+        assert_eq!(with_level(set, 2, false), Ok(None), "already without it");
     }
 
     #[test]

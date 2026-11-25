@@ -163,7 +163,7 @@ fn page(cx: &Cx) -> impl View {
                     <section id="people-intro" class="intro" hidden="">
                         <h1>"Add people"</h1>
                         <p>
-                            "Create Net2 users from a spreadsheet, each with their department, access levels and portrait."
+                            "Create Net2 users from a spreadsheet, each with their department, access level and portrait."
                         </p>
                     </section>
                     <section id="manage-intro" class="intro" hidden="">
@@ -550,7 +550,7 @@ async fn people_tool(cx: &Cx) -> topcoat::Result<impl View> {
                         upload_icon()
                         <span class="drop-title">"Choose a spreadsheet"</span>
                         <span class="drop-hint">
-                            "CSV, Excel or OpenDocument, one person per row: names, and any of department, access levels, dates, PIN, phone numbers, Net2’s custom fields and a photo file name."
+                            "CSV, Excel or OpenDocument, one person per row: names, and any of department, access level, dates, PIN, phone numbers, Net2’s custom fields and a photo file name."
                         </span>
                         <input
                             id="people-file"
@@ -580,7 +580,7 @@ async fn people_tool(cx: &Cx) -> topcoat::Result<impl View> {
                     <summary>"Columns"</summary>
                     <div id="people-map" class="map"></div>
                     <p class="hint">
-                        "Dates as 2027-07-31, 2027-Jul-31 or 31/07/2027. Put several access levels in one cell with semicolons: Working hours; Car park. Departments and access levels must already exist in Net2."
+                        "Dates as 2027-07-31, 2027-Jul-31 or 31/07/2027. Net2 gives each person one access level. Departments and access levels must already exist in Net2."
                     </p>
                 </details>
                 <div class="actions stacked">
@@ -623,7 +623,7 @@ async fn people_tool(cx: &Cx) -> topcoat::Result<impl View> {
                                     <th scope="col">"Row"</th>
                                     <th scope="col">"Name"</th>
                                     <th scope="col">"Department"</th>
-                                    <th scope="col">"Access levels"</th>
+                                    <th scope="col">"Access level"</th>
                                     <th scope="col">"Active from"</th>
                                     <th scope="col">"Expires"</th>
                                     <th scope="col">"Photo"</th>
@@ -723,7 +723,7 @@ async fn manage_tool(cx: &Cx) -> topcoat::Result<impl View> {
                     </button>
                 </details>
                 <details class="columns">
-                    <summary>"Access levels"</summary>
+                    <summary>"Access level"</summary>
                     <button id="manage-load-levels" class="secondary wide">
                         "Load access levels"
                     </button>
@@ -733,8 +733,9 @@ async fn manage_tool(cx: &Cx) -> topcoat::Result<impl View> {
                             <option value="">"Choose an access level"</option>
                         </select>
                     </label>
-                    <button id="manage-add-level" class="secondary wide">
-                        "Add access level"
+                    <p class="hint">"Net2 gives each person one access level."</p>
+                    <button id="manage-set-level" class="secondary wide">
+                        "Set access level"
                     </button>
                     <button id="manage-remove-level" class="secondary wide">
                         "Remove access level"

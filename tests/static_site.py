@@ -179,9 +179,8 @@ window.fetch = async (url, init = {}) => {
     if (route(/^\/users\/\d+\/departments$/, 'PUT')) return reply(204);
     if ((m = route(/^\/users\/(\d+)\/doorpermissionset$/))) {
         if (method === 'PUT') {
-            // A real Net2 answers 204 but keeps only the first access level.
-            if (net2.oneLevel) body.accessLevels = body.accessLevels.slice(0, 1);
-            net2.permissions[m[1]] = body;
+            // A real Net2 can answer 204 and keep less than it was sent.
+            if (!net2.ignoreLevels) net2.permissions[m[1]] = body;
             return reply(204);
         }
         return reply(200, net2.permissions[m[1]]);
@@ -642,7 +641,7 @@ def adding_people(b: Browser):
     assert b.js("return $('people-signin').hidden"), 'signed in already'
     b.upload('people-file', 'people.csv', csv_text([
         ['Forename', 'Surname', 'Dept', 'Access level', 'Expiry', 'Admission number', 'Photo', 'Active'],
-        ['Riya', 'Patel', 'year 7', 'working hours; Car park', '31/07/2027', 'A1', r'C:\photos\Riya.PNG', '16/10/2026'],
+        ['Riya', 'Patel', 'year 7', 'working hours', '31/07/2027', 'A1', r'C:\photos\Riya.PNG', '16/10/2026'],
         ['Ada', 'Lovelace', '', '', '', '', '', ''],
         ['Tom', 'Hall', 'Year 9', '', '', '', '', ''],
         ['Sam', 'Lee', '', '', '', '', 'sam.jpg', ''],
@@ -661,12 +660,12 @@ def adding_people(b: Browser):
     assert b.js(f'return {pickers}[5].value') == ''
     b.js(f"{pickers}[5].value = '7'; {pickers}[5].dispatchEvent(new Event('change', {{bubbles: true}}))")
     preview = "[...document.querySelector('#people-rows tr').children].map(td => td.textContent)"
-    assert b.js(f'return {preview}')[3:6] == ['working hours; Car park', '16/10/2026', '31/07/2027']
+    assert b.js(f'return {preview}')[3:6] == ['working hours', '16/10/2026', '31/07/2027']
 
     b.choose_files('people-photos', "[[png, 'riya.png']]")
     b.click('people-check')
     b.wait_starts('people-notice', 'Checked: 1 ready, 6 held back')
-    assert b.js(f'return {preview}')[3:6] == ['Working hours; Car park', '2026-10-16', '2027-07-31']
+    assert b.js(f'return {preview}')[3:6] == ['Working hours', '2026-10-16', '2027-07-31']
     assert b.js("return [...document.querySelector('#people-rows tr:nth-child(2)').children].slice(3, 6).map(td => td.textContent)") == ['', '', '']
     assert b.js("return document.querySelector('#people-rows tr:nth-child(5) td:nth-child(6)').textContent") == '07/31/2027'
     results = b.js(f'return {RESULTS}')
@@ -700,13 +699,13 @@ def adding_people(b: Browser):
         'activateDate': '2026-10-16T00:00:00',
         'id': 40, 'hasImage': False,
     }
-    # Then her department, access levels and portrait, in that order.
+    # Then her department, access level and portrait, in that order.
     writes = b.js(r"return net2.calls.filter(c => /^\/users\/4\d\//.test(c.path)).map(c => [c.method, c.path, c.body])")
     assert [w[:2] for w in writes] == [
         ['PUT', '/users/40/departments'], ['PUT', '/users/40/doorpermissionset'], ['PUT', '/users/40/image'],
     ], writes
     assert writes[0][2] == {'id': 3, 'name': 'Year 7'}, writes
-    assert writes[1][2] == {'accessLevels': [1, 2], 'individualPermissions': []}, writes
+    assert writes[1][2] == {'accessLevels': [1], 'individualPermissions': []}, writes
     assert b.js('return net2.images[40]').startswith('/9j/')
     assert b.js(f'return {RESULTS}')[:2] == ['Added as user 40.', 'Added as user 41.']
 
@@ -1065,21 +1064,21 @@ def manage_release_workflows(b: Browser):
     b.click('manage-load-levels')
     b.wait_text('manage-notice', '2 access levels available.')
     b.js("$('manage-level').value = '2'")
-    b.click('manage-add-level')
-    b.wait_contains('manage-rows', 'Added Car park.')
+    b.click('manage-set-level')
+    b.wait_contains('manage-rows', 'Access level is now Car park.')
     assert b.js('return net2.permissions[8]') == {
-        'accessLevels': [1, 2], 'individualPermissions': [{'id': 42, 'timezoneId': 3}],
+        'accessLevels': [2], 'individualPermissions': [{'id': 42, 'timezoneId': 3}],
     }
     b.click('manage-remove-level')
     b.wait_contains('manage-rows', 'Removed Car park.')
     assert b.js('return net2.permissions[8]') == {
-        'accessLevels': [1], 'individualPermissions': [{'id': 42, 'timezoneId': 3}],
+        'accessLevels': [], 'individualPermissions': [{'id': 42, 'timezoneId': 3}],
     }
-    b.js('net2.oneLevel = true')
-    b.click('manage-add-level')
+    b.js('net2.ignoreLevels = true')
+    b.click('manage-set-level')
     b.wait_contains('manage-rows', 'Net2 did not save the change to Car park.')
-    assert b.js('return net2.permissions[8].accessLevels') == [1]
-    b.js('net2.oneLevel = false')
+    assert b.js('return net2.permissions[8].accessLevels') == []
+    b.js('net2.ignoreLevels = false')
 
     b.lift()
     signals = b.js('return reader.assignedSignals')

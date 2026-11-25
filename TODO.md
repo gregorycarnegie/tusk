@@ -37,9 +37,9 @@ Checked on a disposable Net2 database on 2026-11-25 (no doors configured):
       again: nothing changed.
 - [x] Undo a leaver: an explicit JSON `null` clears the expiry and keeps the
       rest of the record. Moving the expiry to a different date works.
-- [x] Access levels: removing a level works. Net2 keeps only the first
-      access level in the set and still answers 204, so adding a second
-      level does nothing. Tusk now reads the set back and reports this.
+- [x] Access levels: Net2 gives each person one access level. Sent
+      several, it keeps the first and still answers 204. The Manage tab now
+      sets or removes the one level and reads the set back.
 - [x] Reviewed purge: the user and their cards are gone afterwards.
 - [x] `sdk.UsersEx` has `LastKnownLocation`, not `LastArea`; the
       last-access query now uses it.
@@ -52,16 +52,17 @@ Still to check:
       README and the Manage tab if needed.
 - [ ] On a Net2 with doors: last-access and event fields, roll call, unknown
       cards, and open, hold and return to normal on a test door.
-- [ ] Replace a card on the Manage tab with the desk reader.
-- [ ] Add people with more than one `;`-separated access level: Net2 will
-      likely keep only the first.
+- [x] Replace a card on the Manage tab with the desk reader (2026-11-25):
+      the new card is saved and the old one is marked lost.
+- [x] Add people with several `;`-separated access levels: Net2 kept only
+      the first (2026-11-25), so Tusk now holds such rows back.
 
 ## Implemented and browser-tested
 
 - [x] **Undo a leaver.** Change or clear the expiry for ticked people.
 - [x] **Replace one person's card.** Tick them on Manage, tap the new card,
       and confirm. Old cards are marked lost after Net2 saves the new card.
-- [x] **Add or remove access levels** for ticked people while preserving
+- [x] **Set or remove the access level** of ticked people while preserving
       individual door permissions.
 - [x] **Show a person's site activity** using `sdk.UsersEx` and `GET /events`.
 - [x] **Show fire roll call reports** and their entries from Net2.
