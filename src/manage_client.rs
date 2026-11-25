@@ -138,7 +138,7 @@ pub fn render(state: &State) {
             button("manage-purge")
                 .set_disabled(!ready || !review.as_ref().is_some_and(|review| review.downloaded));
         });
-        button("manage-add-level").set_disabled(!ready);
+        button("manage-set-level").set_disabled(!ready);
         button("manage-remove-level").set_disabled(!ready);
         button("manage-undo").set_disabled(!ready);
         let card = state
@@ -453,36 +453,34 @@ async fn load_levels(state: Rc<RefCell<State>>) {
     crate::client::render(&state.borrow());
 }
 
-async fn change_level(state: Rc<RefCell<State>>, level: (i32, String), add: bool) {
+async fn change_level(state: Rc<RefCell<State>>, level: (i32, String), set: bool) {
     each_ticked(&state, "Updating access for", |user| {
         let (state, (id, name)) = (state.clone(), level.clone());
         async move {
             let path = format!("/users/{user}/doorpermissionset");
             let body = call(&state, "GET", &path, None).await?;
-            let change = with_level(&body, id, add).map_err(|text| failure(text, false, false))?;
+            let change = with_level(&body, id, set).map_err(|text| failure(text, false, false))?;
             let Some(change) = change else {
-                return Ok(if add {
+                return Ok(if set {
                     format!("Already has {name}.")
                 } else {
                     format!("Already without {name}.")
                 });
             };
             call(&state, "PUT", &path, Some(&change)).await?;
-            // Net2 answers 204 but may keep only the first access level.
+            // Net2 answers 204 even when it keeps only part of the set.
             let kept = call(&state, "GET", &path, None)
                 .await
-                .is_ok_and(|reply| with_level(&reply, id, add) == Ok(None));
+                .is_ok_and(|reply| with_level(&reply, id, set) == Ok(None));
             if !kept {
                 return Err(failure(
-                    format!(
-                        "Net2 did not save the change to {name}. It may allow only one access level per person: check them in Net2."
-                    ),
+                    format!("Net2 did not save the change to {name}. Check them in Net2."),
                     false,
                     true,
                 ));
             }
-            Ok(if add {
-                format!("Added {name}.")
+            Ok(if set {
+                format!("Access level is now {name}.")
             } else {
                 format!("Removed {name}.")
             })
@@ -826,22 +824,23 @@ pub fn setup(state: Rc<RefCell<State>>) {
             spawn_local(undo_leavers(undo_state.clone(), date));
         }
     });
-    for (button, add, verb) in [
-        ("manage-add-level", true, "Add"),
-        ("manage-remove-level", false, "Remove"),
-    ] {
+    for (button, set) in [("manage-set-level", true), ("manage-remove-level", false)] {
         let state = state.clone();
         on_click(button, move || {
             let Some(level) = picked("manage-level") else {
                 return notice("Load and choose an access level.");
             };
-            let direction = if add { "to" } else { "from" };
-            if confirmed(&format!(
-                "{verb} {} {direction} {} in Net2?",
-                level.1,
-                people(ticked())
-            )) {
-                spawn_local(change_level(state.clone(), level, add));
+            let question = if set {
+                format!(
+                    "Give {} the access level {} in Net2? It replaces their current level.",
+                    people(ticked()),
+                    level.1
+                )
+            } else {
+                format!("Remove {} from {} in Net2?", level.1, people(ticked()))
+            };
+            if confirmed(&question) {
+                spawn_local(change_level(state.clone(), level, set));
             }
         });
     }

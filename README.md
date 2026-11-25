@@ -169,8 +169,8 @@ result says Net2 did not confirm the change, look in Net2 before trying again.
 
 **Add people.** Sign in, choose a spreadsheet with one new person per row,
 and choose the photos its photo column names. Under **Columns** each Net2
-field is matched to a heading: names, department, access levels (several in
-one cell, split by semicolons: `Working hours; Car park`), activation and expiration
+field is matched to a heading: names, department, access level (one per
+person, as Net2 allows), activation and expiration
 dates, PIN, telephone, extension, fax, the photo's file name, a User ID, and
 Net2's custom fields under the names your Net2 gives them. Dates are read as
 2027-07-31, 2027-Jul-31 (as in Net2's import CSV) or 31/07/2027, day before
@@ -218,9 +218,10 @@ and press **Show people**. Tick people, then:
 - **Replace a card** saves the card on the desktop reader for one ticked
   person, then marks their other active cards lost. The card type comes
   from **Batch assign cards**.
-- **Access levels** adds or removes a chosen level for the ticked people.
-  Tusk reads each person's permission set first and keeps their other
-  levels and individual door permissions.
+- **Access level** sets or removes a chosen level for the ticked people.
+  Net2 gives each person one access level, so setting one replaces their
+  current level. Tusk keeps their individual door permissions and reads the
+  set back to confirm Net2 saved it.
 - **Site activity and roll call** shows the last recorded access and recent
   events for one ticked person, or an existing Net2 roll call report.
 - **Assign a card tapped at a door** lets you identify an unknown card by
