@@ -11,7 +11,7 @@ public and custom days, operators and lockdown rules.
       Add people already sends on a real Net2.
 - [x] **Mark leavers.** Manage tab: optional move to a leavers department,
       then `GET /users/{id}` and `PUT /users/{id}` with only the expiry
-      changed to 23:59 on their last day. Access that already ends sooner is
+      changed to their last day. Access that already ends sooner is
       never extended.
 - [x] **Year change.** Manage tab: renames the year departments from the
       top down (`PUT /departments/{id}`), then makes the new lowest year

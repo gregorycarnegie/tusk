@@ -177,14 +177,15 @@ Net2's custom fields under the names your Net2 gives them. Dates are read as
 month; anything else is refused rather than guessed. **Check against Net2**
 reads Net2's people, departments and access levels. The preview shows matched
 access-level names and activation/expiry dates as year-month-day before you
-confirm. Activation is at 00:00 and expiry at 23:59; blank dates send no date.
+confirm. Tusk sends activation at 00:00 and expiry at 23:59, but Net2 keeps
+only the date; blank dates send no date.
 PINs and custom fields are not shown in the preview. The check holds back a row that
 already has a User ID, a department or access level Net2 does not have (Tusk
 never creates one), a photo that was not chosen, and any row it cannot read.
 Someone whose first name and surname Net2 already has, or an earlier row of
 the sheet, is held back too, but with an **Add anyway** tick: two people can
 share a name. **Add people to Net2** asks for confirmation, then creates each
-person, puts them in their department, gives them their access levels and
+person, puts them in their department, gives them their access level and
 uploads their portrait, converted to a JPG when needed as for portraits.
 **Download results** saves a separate CSV with the sheet row, person's name,
 new User ID (when Net2 returned one), and the outcome of each attempted addition.
@@ -199,15 +200,16 @@ the person, their department, access level and portrait all arrived, and a
 run of 20 people stopped after 5 and resumed from the downloaded sheet added
 each person exactly once. An expiry
 date arrives on the right day, and the department and access level set after
-it leave it in place. That it runs to 23:59 rather than midnight is not yet
-checked on a real Net2, so check the first few if the time matters.
+it leave it in place. Net2 stores the expiry as a date without a time; whether
+a card still works on that day is not yet checked at a door.
 
 **Manage people.** Sign in, pick a department or all users on **Manage**
 and press **Show people**. Tick people, then:
 
 - **Move to department** puts each of them in the department you choose.
-- **Mark as leavers** ends their access at 23:59 on the last day you choose,
-  so their cards stop working then, and first moves them to the leavers
+- **Mark as leavers** sets their expiry to the last day you choose (Net2
+  keeps the date only; whether cards still work on that day is not yet
+  checked at a door), and first moves them to the leavers
   department you pick (or leaves their department as it is). Tusk reads each
   person from Net2 and sends the record back with only the expiry date
   changed. Anyone whose access already ends sooner keeps that date; marking
@@ -404,8 +406,9 @@ repository subpath. Each push to `master` that passes is published to GitHub Pag
 | `src/portrait_client.rs` | Portrait matching, checking, and upload |
 | `src/people.rs` | New Net2 users from sheet rows: fields, dates, and the record sent |
 | `src/people_client.rs` | Adding people: checking against Net2, creating, and download |
-| `src/manage.rs` | The year change plan, and a leaver's record with its new expiry |
-| `src/manage_client.rs` | Managing people: moving, leavers, and the year change |
+| `src/manage.rs` | The year change plan, a leaver's record with its new expiry, and access-level changes |
+| `src/manage_client.rs` | Managing people: moving, leavers, undo, cards, access levels, the year change and purge |
+| `src/manage_site_client.rs` | Manage reports and actions: site activity, roll call, unknown cards and door commands |
 | `src/lib.rs` | Shared protocol library and WebAssembly entry point |
 | `PROTOCOL.md` | The reverse-engineered protocol |
 | `src/style.css` | Page styling |

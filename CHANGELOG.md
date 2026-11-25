@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- More on the **Manage** tab: **Undo a leaver** changes or clears the expiry
+  and reads it back from Net2; **Replace a card** saves the card on the desk
+  reader for one ticked person and marks their other cards lost; **Access
+  level** sets or removes a level, keeping individual door permissions;
+  **Site activity and roll call** shows a person's last access and recent
+  events, or a Net2 roll call report; **Assign a card tapped at a door**;
+  **Door commands** to open once, hold open or return a door to normal; and
+  **Purge expired leavers** after downloading a review and confirming twice.
+- Checked on a real Net2: marking a leaver changes only the expiry; JSON
+  `null` clears it; department renames keep their people; a year change run
+  twice changes nothing the second time; the purge removes the person and
+  their cards; replacing a card with the desk reader works. Net2 stores the
+  expiry as a date only, so whether a card works on the last day is still to
+  be checked at a door. Door commands, roll call and unknown cards still
+  need a Net2 with doors.
+
+### Changed
+
+- Net2 gives each person one access level. **Add people** holds back a row
+  that names several, instead of Net2 silently keeping only the first.
+- A **Year change** now needs one department per year in the chosen range,
+  so a stopped run resumes correctly even with mixed `Y7` and `Year 8`
+  names.
+
 ## [0.5.0-beta.3] - 2026-11-22
 
 ### Added
