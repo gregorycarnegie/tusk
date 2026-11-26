@@ -177,8 +177,8 @@ Net2's custom fields under the names your Net2 gives them. Dates are read as
 month; anything else is refused rather than guessed. **Check against Net2**
 reads Net2's people, departments and access levels. The preview shows matched
 access-level names and activation/expiry dates as year-month-day before you
-confirm. Tusk sends activation at 00:00 and expiry at 23:59, but Net2 keeps
-only the date; blank dates send no date.
+confirm. Access starts on the activation date and lasts through the expiry
+date; blank dates send no date.
 PINs and custom fields are not shown in the preview. The check holds back a row that
 already has a User ID, a department or access level Net2 does not have (Tusk
 never creates one), a photo that was not chosen, and any row it cannot read.
@@ -200,16 +200,15 @@ the person, their department, access level and portrait all arrived, and a
 run of 20 people stopped after 5 and resumed from the downloaded sheet added
 each person exactly once. An expiry
 date arrives on the right day, and the department and access level set after
-it leave it in place. Net2 stores the expiry as a date without a time; whether
-a card still works on that day is not yet checked at a door.
+it leave it in place. Checked at a door: a card works on its expiry date and
+is refused the day after.
 
 **Manage people.** Sign in, pick a department or all users on **Manage**
 and press **Show people**. Tick people, then:
 
 - **Move to department** puts each of them in the department you choose.
-- **Mark as leavers** sets their expiry to the last day you choose (Net2
-  keeps the date only; whether cards still work on that day is not yet
-  checked at a door), and first moves them to the leavers
+- **Mark as leavers** sets their expiry to the last day you choose; their
+  cards work until the end of that day. It first moves them to the leavers
   department you pick (or leaves their department as it is). Tusk reads each
   person from Net2 and sends the record back with only the expiry date
   changed. Anyone whose access already ends sooner keeps that date; marking

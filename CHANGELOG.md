@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-26
+
+The first release out of beta. Every Net2 workflow has been checked on a real
+Net2 except roll call reports.
+
 ### Added
 
 - More on the **Manage** tab: **Undo a leaver** changes or clears the expiry
@@ -20,10 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Checked on a real Net2: marking a leaver changes only the expiry; JSON
   `null` clears it; department renames keep their people; a year change run
   twice changes nothing the second time; the purge removes the person and
-  their cards; replacing a card with the desk reader works. Net2 stores the
-  expiry as a date only, so whether a card works on the last day is still to
-  be checked at a door. Door commands, roll call and unknown cards still
-  need a Net2 with doors.
+  their cards; replacing a card with the desk reader works; site activity,
+  assigning an unknown card tapped at a door, and opening, holding and
+  reinstating a door all work. A card works on its expiry date and is refused
+  the day after.
+  Roll call reports are not yet checked on a real Net2.
 
 ### Changed
 
@@ -433,7 +439,8 @@ because each was a wrong assumption worth remembering:
   reports.
 - Tokens are assumed to be 4 to 8 bytes. Longer ones would be ignored.
 
-[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.3...HEAD
+[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.3...v0.5.0
 [0.5.0-beta.3]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.2...v0.5.0-beta.3
 [0.5.0-beta.2]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.1...v0.5.0-beta.2
 [0.5.0-beta.1]: https://github.com/gregorycarnegie/tusk/compare/v0.4.3...v0.5.0-beta.1

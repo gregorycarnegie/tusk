@@ -814,7 +814,7 @@ pub fn setup(state: Rc<RefCell<State>>) {
         let (date, action) = if day.is_empty() {
             (None, "Clear the expiry".into())
         } else {
-            let action = format!("Set the expiry to 23:59 on {day}");
+            let action = format!("Set the last day of access to {day}");
             (Some(day), action)
         };
         if confirmed(&format!(
@@ -885,7 +885,7 @@ pub fn setup(state: Rc<RefCell<State>>) {
             format!(" They move to {name} first.")
         });
         let question = format!(
-            "Mark {} as leavers?\nTheir access ends at 23:59 on {last_day}, and their cards stop working then.{moving} Anyone whose access already ends sooner keeps that date.",
+            "Mark {} as leavers?\nTheir cards work until the end of {last_day}.{moving} Anyone whose access already ends sooner keeps that date.",
             people(ticked())
         );
         if confirmed(&question) {

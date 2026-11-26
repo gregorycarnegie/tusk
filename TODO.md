@@ -46,12 +46,17 @@ Checked on a disposable Net2 database on 2026-11-25 (no doors configured):
 
 Still to check:
 
-- [ ] Net2 stores expiry as a date only: `T23:59:00` comes back as
-      `T00:00:00`. Check at a door whether a card still works on the last
-      day and is refused the day after, then fix the "23:59" wording in the
-      README and the Manage tab if needed.
-- [ ] On a Net2 with doors: last-access and event fields, roll call, unknown
-      cards, and open, hold and return to normal on a test door.
+- [x] Expiry at a door (2026-11-26): Net2 stores the expiry as a date only
+      (`T23:59:00` comes back as `T00:00:00`), but a card works on its
+      expiry date and is refused the day after. Clearing the expiry restores
+      access. The "23:59" wording is gone.
+- [x] On a Net2 with doors (2026-11-26): site activity shows the last access
+      and recent events, and an unknown card tapped at a door can be
+      assigned and then opens it.
+- [x] Door commands on a real door (2026-11-26): open once unlocks briefly,
+      hold open keeps it unlocked, return to normal locks it again. Net2
+      answers `FireAndForget` to all three, so it never confirms the outcome.
+- [ ] Roll call reports and their entries (needs a roll call report in Net2).
 - [x] Replace a card on the Manage tab with the desk reader (2026-11-25):
       the new card is saved and the old one is marked lost.
 - [x] Add people with several `;`-separated access levels: Net2 kept only

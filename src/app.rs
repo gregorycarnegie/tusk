@@ -634,7 +634,7 @@ async fn people_tool(cx: &Cx) -> topcoat::Result<impl View> {
                         </table>
                     </div>
                     <p class="hint review-foot">
-                        "Check access levels and dates before adding. After checking, dates are shown as year-month-day; activation starts at 00:00 and expiry is at 23:59. Blank dates send no date to Net2. Anyone whose first name and surname Net2 or an earlier row already has is held back until you tick Add anyway. A row with a User ID is never added: keep the download, and running it again adds nobody twice. Download results to keep each attempt’s User ID and outcome, including failures. Results stay in this tab until you close it or replace the sheet."
+                        "Check access levels and dates before adding. After checking, dates are shown as year-month-day; access starts on the activation date and lasts through the expiry date. Blank dates send no date to Net2. Anyone whose first name and surname Net2 or an earlier row already has is held back until you tick Add anyway. A row with a User ID is never added: keep the download, and running it again adds nobody twice. Download results to keep each attempt’s User ID and outcome, including failures. Results stay in this tab until you close it or replace the sheet."
                     </p>
                 </div>
                 <div class="empty-state">
@@ -899,7 +899,7 @@ async fn manage_tool(cx: &Cx) -> topcoat::Result<impl View> {
                         </table>
                     </div>
                     <p class="hint review-foot">
-                        "A leaver’s access ends at 23:59 on their last day. Undo a leaver changes or clears the expiry."
+                        "A leaver’s cards work until the end of their last day. Undo a leaver changes or clears the expiry."
                     </p>
                 </div>
                 <div class="empty-state">
