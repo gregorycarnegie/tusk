@@ -524,6 +524,25 @@ async fn net2_panel(cx: &Cx) -> topcoat::Result<impl View> {
                     "Connect to Net2"
                 </button>
             </form>
+            <form id="net2-mfa" class="net2-form" hidden="">
+                <p id="net2-mfa-hint" class="hint"></p>
+                <label>
+                    "Sign-in code"
+                    <input
+                        id="net2-code"
+                        required=""
+                        inputmode="numeric"
+                        autocomplete="one-time-code"
+                        spellcheck="false"
+                    >
+                </label>
+                <button id="net2-verify" class="primary" type="submit">
+                    "Finish signing in"
+                </button>
+                <button id="net2-mfa-back" class="secondary" type="button">
+                    "Back"
+                </button>
+            </form>
         </section>
     })
 }
@@ -739,6 +758,23 @@ async fn manage_tool(cx: &Cx) -> topcoat::Result<impl View> {
                     </button>
                     <button id="manage-remove-level" class="secondary wide">
                         "Remove access level"
+                    </button>
+                    <span class="field-label">"Temporary access"</span>
+                    <p class="hint">
+                        "Replaces their access level until then. When it ends or is revoked, Net2 gives them their own level back."
+                    </p>
+                    <label class="entry">
+                        "Give the level above until"
+                        <input id="manage-temp-until" type="datetime-local">
+                    </label>
+                    <button id="manage-temp-give" class="secondary wide">
+                        "Give temporary access"
+                    </button>
+                    <button id="manage-temp-check" class="secondary wide">
+                        "Check temporary access"
+                    </button>
+                    <button id="manage-temp-revoke" class="secondary wide">
+                        "Revoke temporary access"
                     </button>
                 </details>
                 <details class="columns">

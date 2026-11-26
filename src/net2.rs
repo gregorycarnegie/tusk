@@ -43,6 +43,8 @@ pub struct Failure {
     pub halt: bool,
     /// The access token was refused, so the session must be dropped.
     pub expired: bool,
+    /// Signing in needs an MFA code: see [`mfa_challenge`].
+    pub challenge: Option<(String, String)>,
 }
 
 pub fn failure(message: impl Into<String>, uncertain: bool, halt: bool) -> Failure {
@@ -51,6 +53,7 @@ pub fn failure(message: impl Into<String>, uncertain: bool, halt: bool) -> Failu
         uncertain,
         halt,
         expired: false,
+        challenge: None,
     }
 }
 
@@ -107,6 +110,7 @@ pub fn status_failure(status: u16, retry_after: Option<&str>, write: bool, body:
         uncertain: write && status >= 500,
         halt: matches!(status, 401 | 403 | 429),
         expired: status == 401,
+        challenge: mfa_challenge(body),
     }
 }
 
@@ -127,6 +131,27 @@ pub fn access_token(reply: &str) -> Option<String> {
         .as_str()
         .filter(|token| !token.is_empty() && token.bytes().all(|b| b.is_ascii_graphic()))
         .map(str::to_string)
+}
+
+/// The challenge token and code type when Net2 answers a password with "MFA
+/// required" (`userChallengeToken`, `userChallengeTypes`, read from Net2's
+/// MfaRequiredException; the HTTP status is unverified). Email is preferred,
+/// as asking Net2 to send the code is the point; otherwise the first offered.
+pub fn mfa_challenge(reply: &str) -> Option<(String, String)> {
+    let value = serde_json::from_str::<Value>(reply).ok()?;
+    let token = text(&value, "userChallengeToken");
+    if token.is_empty() {
+        return None;
+    }
+    let offered: Vec<&str> = field(&value, "userChallengeTypes")
+        .and_then(Value::as_array)
+        .map(|types| types.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let kind = match offered.first() {
+        Some(first) if !offered.iter().any(|t| t.eq_ignore_ascii_case("email")) => first,
+        _ => "Email",
+    };
+    Some((token, kind.to_string()))
 }
 
 /// The sign-in reply's refresh token, if Net2 granted one. It only ever goes
@@ -528,11 +553,40 @@ mod tests {
         expect_that!(operator.message, starts_with(WRONG_OPERATOR));
         expect_that!(operator.message, contains_substring("nope"));
         assert_eq!(sign_in_failure(rejected.clone()), rejected);
+        let mfa = status_failure(
+            401,
+            None,
+            false,
+            r#"{"error":"mfa_required","userChallengeToken":"C1","userChallengeTypes":["App","Email"]}"#,
+        );
+        assert_eq!(mfa.challenge, Some(("C1".into(), "Email".into())));
+        assert_eq!(expired.challenge, None);
         let limited = status_failure(429, Some("60"), false, "<html>proxy</html>");
         expect_that!(limited.message, contains_substring("60 seconds"));
         expect_that!(limited.message, not(contains_substring("html")));
         assert!(status_failure(502, None, true, "").uncertain);
         assert!(!status_failure(502, None, false, "").uncertain);
+    }
+
+    #[rstest]
+    #[case::app_only(
+        r#"{"userChallengeToken":"C","userChallengeTypes":["App"]}"#,
+        Some("App")
+    )]
+    #[case::pascal_case(
+        r#"{"UserChallengeToken":"C","UserChallengeTypes":["email"]}"#,
+        Some("Email")
+    )]
+    #[case::types_unreadable(
+        r#"{"userChallengeToken":"C","userChallengeTypes":[1]}"#,
+        Some("Email")
+    )]
+    #[case::no_mfa(r#"{"access_token":"T","userChallengeToken":""}"#, None)]
+    #[case::not_json("<html>", None)]
+    fn an_mfa_challenge_picks_how_the_code_comes(#[case] reply: &str, #[case] kind: Option<&str>) {
+        let challenge = mfa_challenge(reply);
+        assert_eq!(challenge.as_ref().map(|(_, kind)| kind.as_str()), kind);
+        assert!(challenge.is_none_or(|(token, _)| token == "C"));
     }
 
     #[test]

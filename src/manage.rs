@@ -202,6 +202,22 @@ pub fn with_level(body: &str, level: i32, set: bool) -> Result<Option<Value>, St
     Ok(Some(permissions))
 }
 
+/// Whether Net2's GET /temporaryAccess/users/{id} reply says the person has
+/// temporary access. The shape is unverified: Net2 names the answer
+/// `UserHasTemporaryAccess`, so a bare bool or that one field is accepted.
+pub fn has_temporary_access(body: &str) -> Result<bool, String> {
+    let value: Value = serde_json::from_str(body).map_err(|_| UNEXPECTED)?;
+    value
+        .as_bool()
+        .or_else(|| crate::net2::field(&value, "userHasTemporaryAccess")?.as_bool())
+        .ok_or_else(|| {
+            format!(
+                "{UNEXPECTED} It said: {}",
+                body.chars().take(120).collect::<String>()
+            )
+        })
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
@@ -415,5 +431,25 @@ mod tests {
         #[case] day: &str,
     ) {
         assert!(with_expiry(body, 8, day).is_err());
+    }
+
+    #[rstest]
+    #[case::bare(r#"true"#, Ok(true))]
+    #[case::pascal(r#"{"UserHasTemporaryAccess": false}"#, Ok(false))]
+    #[case::camel(r#"{"userHasTemporaryAccess": true}"#, Ok(true))]
+    fn temporary_access_is_read_in_either_shape(
+        #[case] body: &str,
+        #[case] has: Result<bool, String>,
+    ) {
+        assert_eq!(has_temporary_access(body), has);
+    }
+
+    #[test]
+    fn an_unreadable_temporary_access_reply_shows_what_net2_said() {
+        let said = has_temporary_access(r#"{"expiry": "2027-01-01"}"#).unwrap_err();
+        assert!(
+            said.ends_with(r#"It said: {"expiry": "2027-01-01"}"#),
+            "{said}"
+        );
     }
 }

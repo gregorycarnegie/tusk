@@ -14,7 +14,7 @@ use web_sys::{HtmlButtonElement, HtmlInputElement, HtmlSelectElement};
 
 use crate::{
     client::{element, on_click},
-    manage::{Step, promotion, undo_expiry, with_expiry, with_level},
+    manage::{Step, has_temporary_access, promotion, undo_expiry, with_expiry, with_level},
     net2::{Failure, TOKEN_TYPES, User, failure, read_named, read_user, read_users},
     net2_client::{call, card_type, fill, load_departments, save_card, today},
     portrait_client::{PACE_MS, sleep},
@@ -140,6 +140,13 @@ pub fn render(state: &State) {
         });
         button("manage-set-level").set_disabled(!ready);
         button("manage-remove-level").set_disabled(!ready);
+        for id in [
+            "manage-temp-give",
+            "manage-temp-check",
+            "manage-temp-revoke",
+        ] {
+            button(id).set_disabled(!ready);
+        }
         button("manage-undo").set_disabled(!ready);
         let card = state
             .card
@@ -484,6 +491,74 @@ async fn change_level(state: Rc<RefCell<State>>, level: (i32, String), set: bool
             } else {
                 format!("Removed {name}.")
             })
+        }
+    })
+    .await;
+}
+
+/// Temporary access, one person per request so each row shows its outcome.
+/// Net2 swaps it in for their access level and puts theirs back when it is
+/// revoked (checked live 2026-11-26). The path's user ID is the one it uses.
+async fn give_temporary(state: Rc<RefCell<State>>, level: (i32, String), until: String) {
+    each_ticked(&state, "Giving temporary access to", |user| {
+        let (state, (id, name), until) = (state.clone(), level.clone(), until.clone());
+        async move {
+            let body = json!({
+                "userIds": [user],
+                "accessLevelId": id,
+                "expiryDateTime": format!("{until}:00"),
+            });
+            call(
+                &state,
+                "POST",
+                &format!("/temporaryAccess/users/{user}"),
+                Some(&body),
+            )
+            .await?;
+            Ok(format!(
+                "Temporary {name} until {}.",
+                until.replace('T', " ")
+            ))
+        }
+    })
+    .await;
+}
+
+async fn check_temporary(state: Rc<RefCell<State>>) {
+    each_ticked(&state, "Checking", |user| {
+        let state = state.clone();
+        async move {
+            let reply = call(
+                &state,
+                "GET",
+                &format!("/temporaryAccess/users/{user}"),
+                None,
+            )
+            .await?;
+            let has = has_temporary_access(&reply).map_err(|text| failure(text, false, false))?;
+            Ok(if has {
+                "Has temporary access."
+            } else {
+                "No temporary access."
+            }
+            .into())
+        }
+    })
+    .await;
+}
+
+async fn revoke_temporary(state: Rc<RefCell<State>>) {
+    each_ticked(&state, "Revoking temporary access for", |user| {
+        let state = state.clone();
+        async move {
+            call(
+                &state,
+                "DELETE",
+                "/temporaryAccess/users",
+                Some(&json!([user])),
+            )
+            .await?;
+            Ok("Temporary access revoked.".into())
         }
     })
     .await;
@@ -844,6 +919,34 @@ pub fn setup(state: Rc<RefCell<State>>) {
             }
         });
     }
+    let give_state = state.clone();
+    on_click("manage-temp-give", move || {
+        let until = input("manage-temp-until").value();
+        let Some(level) = picked("manage-level").filter(|_| !until.is_empty()) else {
+            return notice("Load and choose an access level, and when temporary access ends.");
+        };
+        if confirmed(&format!(
+            "Give {} temporary access to {} until {}? It replaces their access level until then.",
+            people(ticked()),
+            level.1,
+            until.replace('T', " ")
+        )) {
+            spawn_local(give_temporary(give_state.clone(), level, until));
+        }
+    });
+    let check_state = state.clone();
+    on_click("manage-temp-check", move || {
+        spawn_local(check_temporary(check_state.clone()))
+    });
+    let revoke_state = state.clone();
+    on_click("manage-temp-revoke", move || {
+        if confirmed(&format!(
+            "Revoke temporary access for {}?",
+            people(ticked())
+        )) {
+            spawn_local(revoke_temporary(revoke_state.clone()));
+        }
+    });
     let card_state = state.clone();
     on_click("manage-replace", move || {
         let person = selected_person();

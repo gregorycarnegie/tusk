@@ -143,8 +143,14 @@ You need:
   Activated licences**.
 - A Net2 **operator** allowed to view users and edit tokens and portraits,
   entered exactly as Net2 names it. Net2's built-in engineer account is
-  `System engineer`. Accounts that need a second sign-in step (MFA) are not
-  supported yet.
+  `System engineer`. When MFA is turned on in Net2 (it applies to every
+  operator), Tusk asks Net2 to email the code (or asks for the authenticator
+  app code) after the password, then asks for it in the sign-in panel. With
+  MFA off, sign-in is as before.
+  Net2 lets an operator in without a code for the number of days set in
+  its MFA settings after a code passed, so that setting must be at least 1.
+  For app MFA, each operator first signs in to the Net2 desktop app once to
+  set up the authenticator app.
 - A browser that **trusts the Net2 server's certificate**, with the server
   entered by a name the certificate covers (`https://net2-server:8443`). On the
   Net2 server itself, `https://localhost:8443` works. Chrome may also ask to
@@ -220,6 +226,9 @@ and press **Show people**. Tick people, then:
   person, then marks their other active cards lost. The card type comes
   from **Batch assign cards**.
 - **Access level** sets or removes a chosen level for the ticked people.
+  **Temporary access** gives them the chosen level until a date and time,
+  checks who has it, and revokes it. It replaces their access level until
+  then, and Net2 gives them their own level back when it ends or is revoked.
   Net2 gives each person one access level, so setting one replaces their
   current level. Tusk keeps their individual door permissions and reads the
   set back to confirm Net2 saved it.
@@ -406,7 +415,7 @@ repository subpath. Each push to `master` that passes is published to GitHub Pag
 | `src/people.rs` | New Net2 users from sheet rows: fields, dates, and the record sent |
 | `src/people_client.rs` | Adding people: checking against Net2, creating, and download |
 | `src/manage.rs` | The year change plan, a leaver's record with its new expiry, and access-level changes |
-| `src/manage_client.rs` | Managing people: moving, leavers, undo, cards, access levels, the year change and purge |
+| `src/manage_client.rs` | Managing people: moving, leavers, undo, cards, access levels, temporary access, the year change and purge |
 | `src/manage_site_client.rs` | Manage reports and actions: site activity, roll call, unknown cards and door commands |
 | `src/lib.rs` | Shared protocol library and WebAssembly entry point |
 | `PROTOCOL.md` | The reverse-engineered protocol |

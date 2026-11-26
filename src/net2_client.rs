@@ -14,9 +14,9 @@ use crate::{
     batch::Batch,
     client::{element, on_click},
     net2::{
-        Failure, UNCERTAIN_WRITE, access_token, describe_owners, failure, lost_tokens, owner_query,
-        parse_origin, read_cards, read_named, read_users, refresh_token, sign_in_failure,
-        status_failure,
+        Failure, UNCERTAIN_WRITE, access_token, describe_owners, failure, lost_tokens,
+        mfa_challenge, owner_query, parse_origin, read_cards, read_named, read_users,
+        refresh_token, sign_in_failure, status_failure,
     },
     reader::{Session, State, Tone, Tool},
 };
@@ -44,6 +44,7 @@ thread_local! {
     static SAVING: Cell<bool> = const { Cell::new(false) };
     /// The card on the Read tab and what Net2 said about it, once it answers.
     static OWNER: RefCell<Option<(u32, Option<String>)>> = const { RefCell::new(None) };
+    static MFA: RefCell<Option<Pending>> = const { RefCell::new(None) };
 }
 
 fn value(id: &str) -> String {
@@ -198,7 +199,9 @@ pub fn render(state: &State) {
     let problem = element("net2-problem");
     problem.set_hidden(*tone != Tone::Problem);
     problem.set_text_content(Some(message));
-    element("net2-form").set_hidden(connected);
+    let waiting = MFA.with_borrow(Option::is_some);
+    element("net2-form").set_hidden(connected || waiting);
+    element("net2-mfa").set_hidden(connected || !waiting);
     for id in [
         "net2-open",
         "owner-connect",
@@ -358,6 +361,36 @@ async fn save_batch_card(state: Rc<RefCell<State>>) {
     crate::client::render(&state);
 }
 
+/// A password Net2 accepted, waiting for the operator's MFA code. Net2 wants
+/// the password again with the challenge token, so it is held until then.
+#[derive(Clone)]
+struct Pending {
+    origin: String,
+    client_id: String,
+    secret: String,
+    user: String,
+    password: String,
+    challenge: String,
+}
+
+/// Shows a sign-in refusal without anything secret that Net2 echoed back.
+fn refused(state: &Rc<RefCell<State>>, mut problem: Failure, origin: &str, secrets: [&str; 2]) {
+    for secret in secrets.into_iter().filter(|s| s.len() > 2) {
+        problem.message = problem.message.replace(secret, "[hidden]");
+    }
+    if problem.message == UNREACHABLE {
+        problem.message = unreachable(origin);
+    }
+    state.borrow_mut().net2_status = (Tone::Problem, problem.message);
+    crate::client::render(&state.borrow());
+}
+
+fn busy(state: &Rc<RefCell<State>>, message: String) {
+    let mut state = state.borrow_mut();
+    state.net2_status = (Tone::Busy, message);
+    crate::client::render(&state);
+}
+
 async fn connect(state: Rc<RefCell<State>>) {
     let password = value("net2-password");
     let secret = value("net2-secret");
@@ -370,47 +403,152 @@ async fn connect(state: Rc<RefCell<State>>) {
             return crate::client::render(&state.borrow());
         }
     };
-    let client_id = value("net2-client").trim().to_string();
-    // offline_access asks for a refresh token, so an expired session renews
-    // itself instead of stopping a batch for the password again.
+    let pending = Pending {
+        origin,
+        client_id: value("net2-client").trim().to_string(),
+        secret,
+        user: value("net2-user"),
+        password,
+        challenge: String::new(),
+    };
+    busy(&state, format!("Signing in to {}…", pending.origin));
+    let reply = sign_in(&pending).await;
+    // An operator with MFA gets a challenge instead of a token.
+    let challenge = match &reply {
+        Ok(reply) => mfa_challenge(reply),
+        Err(problem) => problem.challenge.clone(),
+    };
+    let Some((challenge, kind)) = challenge else {
+        return finish(state, pending, reply).await;
+    };
+    let pending = Pending {
+        challenge,
+        ..pending
+    };
+    let sent = fetch(
+        &pending.origin,
+        None,
+        "POST",
+        "/authorization/mfa-request",
+        form(&[
+            ("challengeToken", &pending.challenge),
+            ("challengeType", &kind),
+        ]),
+    )
+    .await;
+    let sent = match sent {
+        Ok(reply) => reply,
+        Err(mut problem) => {
+            // Checked live 2026-11-26: a bare 400 until the operator has set
+            // up the app by signing in to the Net2 desktop app once.
+            if kind != "Email" && problem.message.starts_with("Net2 refused the request.") {
+                problem.message = "Net2 would not start app sign-in. Sign in to the Net2 desktop app as this operator once to set up the authenticator app, then try again.".into();
+            }
+            return refused(
+                &state,
+                problem,
+                &pending.origin,
+                [&pending.password, &pending.secret],
+            );
+        }
+    };
+    // Net2 answers 202 with the address masked, as g***e@g***.com.
+    let to = serde_json::from_str::<Value>(&sent)
+        .map(|reply| crate::net2::text(&reply, "obfuscatedEmail"))
+        .unwrap_or_default();
+    let hint = match (kind.as_str(), to.is_empty()) {
+        ("Email", false) => {
+            format!("Net2 has emailed a sign-in code to {to}. Enter it to finish signing in.")
+        }
+        ("Email", true) => {
+            "Net2 has emailed this operator a sign-in code. Enter it to finish signing in.".into()
+        }
+        _ => "Enter the code from this operator’s authenticator app to finish signing in.".into(),
+    };
+    element("net2-mfa-hint").set_text_content(Some(&hint));
+    MFA.set(Some(pending));
+    state.borrow_mut().net2_status = (Tone::Idle, "Waiting for the sign-in code".into());
+    crate::client::render(&state.borrow());
+    element("net2-code")
+        .unchecked_into::<web_sys::HtmlElement>()
+        .focus()
+        .ok();
+}
+
+/// The password grant, with the challenge token once the MFA code passed.
+/// offline_access asks for a refresh token, so an expired session renews
+/// itself instead of stopping a batch for the password again.
+async fn sign_in(pending: &Pending) -> Result<String, Failure> {
     let body = form(&[
         ("grant_type", "password"),
-        ("username", &value("net2-user")),
-        ("password", &password),
-        ("client_id", &client_id),
-        ("client_secret", &secret),
+        ("username", &pending.user),
+        ("password", &pending.password),
+        ("client_id", &pending.client_id),
+        ("client_secret", &pending.secret),
         ("scope", "offline_access"),
+        ("challenge_token", &pending.challenge),
     ]);
-    {
-        let mut state = state.borrow_mut();
-        state.net2_status = (Tone::Busy, format!("Signing in to {origin}…"));
-        crate::client::render(&state);
+    fetch(&pending.origin, None, "POST", "/authorization/tokens", body).await
+}
+
+async fn verify(state: Rc<RefCell<State>>) {
+    let code = value("net2-code").trim().to_string();
+    clear("net2-code");
+    let Some(pending) = MFA.with_borrow(Clone::clone) else {
+        return;
+    };
+    busy(&state, "Checking the code…".into());
+    let checked = fetch(
+        &pending.origin,
+        None,
+        "POST",
+        "/authorization/mfa-challenge",
+        form(&[("challengeToken", &pending.challenge), ("code", &code)]),
+    )
+    .await;
+    if let Err(mut problem) = checked {
+        // The code stays asked for, so a mistyped one can be entered again.
+        problem.message = problem.message.replacen(
+            "Net2 refused the request.",
+            "Net2 didn’t accept that code. Check it, or press Back and sign in again for a new one.",
+            1,
+        );
+        return refused(
+            &state,
+            problem,
+            &pending.origin,
+            [&pending.password, &pending.secret],
+        );
     }
-    let token = fetch(&origin, None, "POST", "/authorization/tokens", body)
-        .await
-        .and_then(|reply| {
-            let refresh = refresh_token(&reply);
-            access_token(&reply).map(|token| (token, refresh)).ok_or_else(|| {
-                failure(
-                    "Net2 did not return an access token. Accounts that need a second sign-in step are not supported yet.",
-                    false,
-                    false,
-                )
-            })
-        });
+    // Net2 lets the password through for its MFA "days" after a code passed,
+    // so with 0 days it asks again forever (checked live 2026-11-26).
+    let reply = sign_in(&pending).await.map_err(|mut problem| {
+        if problem.challenge.is_some() {
+            problem.message = "Net2 accepted the code but still asks for one. In Net2's MFA settings, set the days until operators authenticate again to at least 1.".into();
+        }
+        problem
+    });
+    MFA.set(None);
+    finish(state, pending, reply).await;
+}
+
+async fn finish(state: Rc<RefCell<State>>, pending: Pending, reply: Result<String, Failure>) {
+    let token = reply.and_then(|reply| {
+        let refresh = refresh_token(&reply);
+        access_token(&reply)
+            .map(|token| (token, refresh))
+            .ok_or_else(|| failure("Net2 did not return an access token.", false, false))
+    });
+    let Pending {
+        origin,
+        client_id,
+        secret,
+        password,
+        ..
+    } = pending;
     let (token, refresh) = match token.map_err(sign_in_failure) {
         Ok(tokens) => tokens,
-        Err(mut problem) => {
-            // Some servers echo submitted values in errors.
-            for secret in [&password, &secret].into_iter().filter(|s| s.len() > 2) {
-                problem.message = problem.message.replace(secret.as_str(), "[hidden]");
-            }
-            if problem.message == UNREACHABLE {
-                problem.message = unreachable(&origin);
-            }
-            state.borrow_mut().net2_status = (Tone::Problem, problem.message);
-            return crate::client::render(&state.borrow());
-        }
+        Err(problem) => return refused(&state, problem, &origin, [&password, &secret]),
     };
     if let Some(storage) = storage() {
         let _ = storage.set_item("net2-server", &origin);
@@ -550,6 +688,20 @@ pub fn setup(state: Rc<RefCell<State>>) {
     });
     element("net2-form").set_onsubmit(Some(callback.as_ref().unchecked_ref()));
     callback.forget();
+    let verify_state = state.clone();
+    let callback = Closure::<dyn FnMut(web_sys::Event)>::new(move |event: web_sys::Event| {
+        event.prevent_default();
+        spawn_local(verify(verify_state.clone()));
+    });
+    element("net2-mfa").set_onsubmit(Some(callback.as_ref().unchecked_ref()));
+    callback.forget();
+    let back_state = state.clone();
+    on_click("net2-mfa-back", move || {
+        MFA.set(None);
+        let mut state = back_state.borrow_mut();
+        state.net2_status = (Tone::Idle, "Not connected".into());
+        crate::client::render(&state);
+    });
     let focus_state = state.clone();
     let callback = Closure::<dyn FnMut()>::new(move || {
         spawn_local(load_departments(focus_state.clone()));

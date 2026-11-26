@@ -89,6 +89,7 @@ window.net2 = {
     calls: [], queries: [], token: 'T0K',
     cards: {8: ['11111111']}, lost: [], images: {}, created: [],
     departments: [{id: 3, name: 'Year 7'}], edited: {}, permissions: {}, purged: [],
+    temporary: {},
 };
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init = {}) => {
@@ -111,9 +112,26 @@ window.fetch = async (url, init = {}) => {
             net2.token = 'T1K';
             return reply(200, {access_token: 'T1K', refresh_token: 'R3FRESH'});
         }
-        return body.password === 'right &=%'
-            ? reply(200, {access_token: net2.token, refresh_token: 'R3FRESH'})
-            : reply(400, {message: 'invalid_client'});
+        if (body.password !== 'right &=%') return reply(400, {message: 'invalid_client'});
+        // As the real Net2 with MFA on: a 403 challenge until a code passed
+        // within its MFA "days", which never happens with 0 days.
+        if (net2.mfa && !(net2.mfaPassed && net2.mfa !== 'zero days')) {
+            return reply(403, {error: 'mfa_required', userChallengeTypes: net2.mfaTypes || ['Email'], userChallengeToken: 'CH4LL'});
+        }
+        return reply(200, {access_token: net2.token, refresh_token: 'R3FRESH'});
+    }
+    if (path === '/authorization/mfa-request') {
+        // App sign-in fails until the operator set the app up in Net2 itself.
+        if (body.challengeType === 'App') {
+            return net2.appReady ? reply(202, {challengeType: 1, obfuscatedEmail: '', authenticatorAppSetupImage: null})
+                : new Response(null, {status: 400});
+        }
+        return reply(202, {challengeType: 0, obfuscatedEmail: 'g***e@g***.com', authenticatorAppSetupImage: null});
+    }
+    if (path === '/authorization/mfa-challenge') {
+        if (body.challengeToken !== 'CH4LL' || body.code !== '123456') return reply(400, {message: 'Invalid code'});
+        net2.mfaPassed = true;
+        return new Response(null, {status: 200});
     }
     if (auth !== 'Bearer ' + net2.token) return reply(401, {Message: 'Authorization has been denied'});
     if (method === 'PUT' && path === net2.failPath) return reply(400, {message: 'Test failure'});
@@ -187,6 +205,19 @@ window.fetch = async (url, init = {}) => {
     }
     if ((m = route(/^\/users\/(\d+)\/image$/, 'PUT'))) {
         net2.images[m[1]] = body.base64Data;
+        return reply(204);
+    }
+
+    // Temporary access.
+    if ((m = route(/^\/temporaryAccess\/users\/(\d+)$/, 'POST'))) {
+        net2.temporary[m[1]] = body;
+        return reply(200, {});
+    }
+    if ((m = route(/^\/temporaryAccess\/users\/(\d+)$/, 'GET'))) {
+        return reply(200, {UserHasTemporaryAccess: m[1] in net2.temporary});
+    }
+    if (route(/^\/temporaryAccess\/users$/, 'DELETE')) {
+        body.forEach(id => delete net2.temporary[id]);
         return reply(204);
     }
 
@@ -559,9 +590,9 @@ def signing_in_to_net2(b: Browser):
     # The reader and Net2 links stay in view on every tab.
     assert b.js("return !$('reader-panel').hidden && !$('net2-open').hidden")
 
-    def sign_in(password: str):
+    def sign_in(password: str, user: str = 'System engineer'):
         fields = {'net2-server': 'https://NET2.test/', 'net2-client': 'client',
-                  'net2-user': 'System engineer', 'net2-password': password + ' &=%'}
+                  'net2-user': user, 'net2-password': password + ' &=%'}
         b.js(f"""
             if (!{SHEET_OPEN}) $('net2-open').click();
             for (const [id, value] of Object.entries({json.dumps(fields)})) $(id).value = value;
@@ -577,9 +608,56 @@ def signing_in_to_net2(b: Browser):
     # A JSON sign-in needs a CORS preflight, which Net2's rate limit refuses.
     assert b.js('return net2.calls[0].kind') == 'application/x-www-form-urlencoded'
 
+    # An operator with MFA: Net2 answers the password with a challenge, Tusk
+    # asks Net2 to email the code, and the code finishes signing in.
+    # App MFA: Net2 refuses until the app is set up in the Net2 desktop app.
+    b.js("net2.mfa = 'on'; net2.mfaTypes = ['App']")
+    sign_in('right')
+    b.wait_contains('net2-problem', 'Net2 desktop app')
+    assert b.js("return $('net2-mfa').hidden && !$('net2-form').hidden")
+    b.js('net2.appReady = true')
+    sign_in('right')
+    b.wait("!$('net2-mfa').hidden")
+    assert 'authenticator app' in b.text('net2-mfa-hint')
+    b.click('net2-mfa-back')
+    assert b.js("return $('net2-mfa').hidden && !$('net2-form').hidden")
+    b.js('delete net2.mfaTypes')
+
+    # With 0 days Net2 asks again even after a right code; Tusk says why.
+    b.js("net2.calls = []; net2.mfa = 'zero days'")
+    sign_in('right')
+    b.wait("!$('net2-mfa').hidden")
+    b.js("$('net2-code').value = '123456'; $('net2-verify').click()")
+    b.wait_contains('net2-problem', 'at least 1')
+    assert b.js("return $('net2-mfa').hidden && !$('net2-form').hidden")
+
+    b.js("net2.calls = []; net2.mfa = 'on'; net2.mfaPassed = false")
+    sign_in('right')
+    b.wait("!$('net2-mfa').hidden")
+    assert b.js("return $('net2-form').hidden")
+    assert 'emailed a sign-in code to g***e@g***.com' in b.text('net2-mfa-hint')
+    assert b.js("return net2.calls.map(c => [c.path, c.body, c.kind])")[1:] == [[
+        '/authorization/mfa-request', {'challengeToken': 'CH4LL', 'challengeType': 'Email'},
+        'application/x-www-form-urlencoded',
+    ]]
+    b.js("$('net2-code').value = '000000'; $('net2-verify').click()")
+    b.wait_contains('net2-problem', 'didn’t accept that code')
+    assert b.js("return !$('net2-mfa').hidden && $('net2-code').value === ''")
+    b.js("$('net2-code').value = ' 123456 '; $('net2-verify').click()")
+    b.wait_text('net2-message', 'Connected to https://net2.test')
+    last = b.js("return net2.calls.findLast(c => c.path === '/authorization/tokens')")
+    assert last['body']['challenge_token'] == 'CH4LL', last
+    assert last['body']['password'] == 'right &=%'
+    b.click('net2-disconnect')
+    b.js('net2.mfa = false')
+
+    # Without MFA, sign-in is the one request it always was.
+    b.js('net2.calls = []')
     sign_in('right')
     b.wait_text('net2-message', 'Connected to https://net2.test')
-    assert b.js(f"return $('net2-form').hidden && !{SHEET_OPEN}")
+    assert b.js("return net2.calls.map(c => c.path)") == ['/authorization/tokens', '/departments']
+    assert 'challenge_token' not in b.js("return net2.calls[0].body")
+    assert b.js(f"return $('net2-form').hidden && $('net2-mfa').hidden && !{SHEET_OPEN}")
     assert b.js("return $('net2-open').hidden && !$('net2-disconnect').hidden")
 
 
@@ -1079,6 +1157,24 @@ def manage_release_workflows(b: Browser):
     b.wait_contains('manage-rows', 'Net2 did not save the change to Car park.')
     assert b.js('return net2.permissions[8].accessLevels') == []
     b.js('net2.ignoreLevels = false')
+
+    # Temporary access: given, checked and revoked one person at a time.
+    b.js("$('manage-temp-until').value = '2027-11-24T17:30'; net2.calls = []")
+    b.click('manage-temp-give')
+    b.wait_contains('manage-rows', 'Temporary Car park until 2027-11-24 17:30.')
+    assert b.js("return net2.calls.map(c => [c.method, c.path, c.body])") == [[
+        'POST', '/temporaryAccess/users/8',
+        {'userIds': [8], 'accessLevelId': 2, 'expiryDateTime': '2027-11-24T17:30:00'},
+    ]]
+    b.click('manage-temp-check')
+    b.wait_contains('manage-rows', 'Has temporary access.')
+    b.click('manage-temp-revoke')
+    b.wait_contains('manage-rows', 'Temporary access revoked.')
+    assert b.js("return [net2.calls.at(-1).method, net2.calls.at(-1).path, net2.calls.at(-1).body]") == [
+        'DELETE', '/temporaryAccess/users', [8],
+    ]
+    b.click('manage-temp-check')
+    b.wait_contains('manage-rows', 'No temporary access.')
 
     b.lift()
     signals = b.js('return reader.assignedSignals')

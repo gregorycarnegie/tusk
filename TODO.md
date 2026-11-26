@@ -19,6 +19,27 @@ public and custom days, operators and lockdown rules.
       the selected range. Tests cover every stopping point, including ranges
       with mixed `Y7` and `Year 8` naming.
 
+- [x] **Temporary access levels.** Manage tab, under Access level: give
+      the ticked people the chosen level until a date and time
+      (`POST /temporaryAccess/users/{id}` with
+      `{userIds: [id], accessLevelId, expiryDateTime}`), check it
+      (`GET /temporaryAccess/users/{id}`), and revoke it
+      (`DELETE /temporaryAccess/users` with `[id]`), one person at a time.
+      The department and revoke-everyone endpoints are left out: ticking a
+      whole department does the same, and each row shows its own outcome.
+- [x] **MFA: send the code from Tusk.** Net2's own Local API files show the
+      flow (the DLL is obfuscated, so the names below come from its metadata):
+      a password grant for an MFA operator throws `MfaRequiredException`, and
+      the reply holds `error`, `userChallengeToken` and `userChallengeTypes`.
+      Tusk takes a reply without `userChallengeToken` as no MFA, so those
+      operators sign in with one request as before. With a challenge, Tusk
+      sends `POST /authorization/mfa-request` `{challengeToken,
+      challengeType}` (Email if offered, else the first type), asks for the
+      code, checks it with `POST /authorization/mfa-challenge`
+      `{challengeToken, code}`, then repeats the password grant with
+      `challenge_token`. All three endpoints have their own 2 r/s nginx limit,
+      so every call is form-urlencoded (no preflight).
+
 ## Check on a real Net2 before release
 
 The browser smoke test exercises these workflows with a stand-in Net2.
@@ -57,6 +78,30 @@ Still to check:
       hold open keeps it unlocked, return to normal locks it again. Net2
       answers `FireAndForget` to all three, so it never confirms the outcome.
 - [ ] Roll call reports and their entries (needs a roll call report in Net2).
+- [x] Email MFA, checked with curl (2026-11-26). MFA is server-wide. The
+      challenge is HTTP 403 `{error: "mfa_required", userChallengeTypes:
+      ["Email"], userChallengeToken}`. `mfa-request` answers 202
+      `{challengeType: 0, obfuscatedEmail, authenticatorAppSetupImage}` and
+      sends the email; `mfa-challenge` answers 200 with an empty body. Net2
+      decides with `IsMFARequired(operatorId)`: a passed code lets that
+      operator's password through for the MFA "days" setting, on any device,
+      and `challenge_token` makes no difference. With 0 days the API can
+      never sign in (Tusk now says so). Both Net2 replies allow CORS.
+- [x] MFA in Chrome through Tusk's sign-in sheet (2026-11-26): the code box
+      named the masked address, the email came, and the code connected.
+- [x] App MFA (2026-11-26): `mfa-request` with `App` answers a bare 400 until
+      the operator has signed in to the Net2 desktop app once to scan the QR
+      code (Tusk now says so), then 202 `{challengeType: 1}`; a fresh app
+      code passes `mfa-challenge`. With Email turned off, Net2 still sends
+      an email code if asked.
+- [x] Renewing a session ignores MFA (2026-11-26): with the days at 0, the
+      refresh grant still returned a new token without a challenge.
+- [x] Temporary access, checked with curl (2026-11-26). GET answers
+      `{userId, userHasTemporaryAccess}`. POST answers `{set: true}`, uses the
+      path's user ID (body `userIds` is ignored), and *replaces* the person's
+      access level; revoking (204) puts their own level back. When it runs
+      out, Net2 puts their own level back by itself within two minutes.
+- [ ] Temporary access at a door.
 - [x] Replace a card on the Manage tab with the desk reader (2026-11-25):
       the new card is saved and the old one is marked lost.
 - [x] Add people with several `;`-separated access levels: Net2 kept only
