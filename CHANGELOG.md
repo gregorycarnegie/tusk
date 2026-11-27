@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-27
+
+Roll call reports are gone, so every Net2 workflow left in Tusk has been
+checked on a real Net2.
+
+### Added
+
+- **MFA sign-in.** When MFA is turned on in Net2, Tusk asks Net2 to email
+  the code (or asks for the authenticator app code), then asks for it in the
+  sign-in sheet, which names the masked address the code went to. With MFA
+  off, sign-in is the one request it was. Clear messages cover a Net2 whose
+  MFA days are set to 0 (the code passes but Net2 asks again) and app MFA
+  not yet set up in the Net2 desktop app. Renewing a session never asks for
+  a code.
+- **Temporary access** on the Manage tab, under Access level: gives the
+  ticked people the chosen level until a date and time, checks who has it,
+  and revokes it. It replaces their level until then, and Net2 gives them
+  their own level back when it ends or is revoked.
+- Checked on a real Net2: email and app MFA, including in Chrome through the
+  sign-in sheet; temporary access at a door opens it while active, and the
+  card is refused within a minute of the end and straight after a revoke.
+
+### Removed
+
+- **Roll call reports** on the Manage tab. They need areas set up in Net2,
+  so they could never be checked on a real Net2. The section is now
+  **Site activity**.
+
 ## [0.5.0] - 2026-11-26
 
 The first release out of beta. Every Net2 workflow has been checked on a real
@@ -439,7 +467,8 @@ because each was a wrong assumption worth remembering:
   reports.
 - Tokens are assumed to be 4 to 8 bytes. Longer ones would be ignored.
 
-[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.3...v0.5.0
 [0.5.0-beta.3]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.2...v0.5.0-beta.3
 [0.5.0-beta.2]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.1...v0.5.0-beta.2

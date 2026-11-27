@@ -819,21 +819,9 @@ async fn manage_tool(cx: &Cx) -> topcoat::Result<impl View> {
                     </div>
                 </details>
                 <details class="columns">
-                    <summary>"Site activity and roll call"</summary>
+                    <summary>"Site activity"</summary>
                     <button id="manage-activity" class="secondary wide">
                         "Show activity for one ticked person"
-                    </button>
-                    <button id="manage-load-rollcalls" class="secondary wide">
-                        "Load roll call reports"
-                    </button>
-                    <label class="entry">
-                        "Net2 roll call report"
-                        <select id="manage-rollcall">
-                            <option value="">"Choose a report"</option>
-                        </select>
-                    </label>
-                    <button id="manage-show-rollcall" class="secondary wide">
-                        "Show report"
                     </button>
                 </details>
                 <details class="columns">

@@ -77,7 +77,6 @@ Still to check:
 - [x] Door commands on a real door (2026-11-26): open once unlocks briefly,
       hold open keeps it unlocked, return to normal locks it again. Net2
       answers `FireAndForget` to all three, so it never confirms the outcome.
-- [ ] Roll call reports and their entries (needs a roll call report in Net2).
 - [x] Email MFA, checked with curl (2026-11-26). MFA is server-wide. The
       challenge is HTTP 403 `{error: "mfa_required", userChallengeTypes:
       ["Email"], userChallengeToken}`. `mfa-request` answers 202
@@ -119,7 +118,6 @@ Still to check:
 - [x] **Set or remove the access level** of ticked people while preserving
       individual door permissions.
 - [x] **Show a person's site activity** using `sdk.UsersEx` and `GET /events`.
-- [x] **Show fire roll call reports** and their entries from Net2.
 - [x] **Assign a card tapped at a door** using `events/latestunknowntokens`.
 - [x] **Open, hold open, or return a door to normal operation** from Manage.
 - [x] **Purge ticked leavers past the retention period** after downloading

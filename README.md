@@ -232,8 +232,8 @@ and press **Show people**. Tick people, then:
   Net2 gives each person one access level, so setting one replaces their
   current level. Tusk keeps their individual door permissions and reads the
   set back to confirm Net2 saved it.
-- **Site activity and roll call** shows the last recorded access and recent
-  events for one ticked person, or an existing Net2 roll call report.
+- **Site activity** shows the last recorded access and recent events for
+  one ticked person.
 - **Assign a card tapped at a door** lets you identify an unknown card by
   its number, time and door, then assign it to one ticked person.
 - **Door commands** opens one door, holds it open, or returns it to normal
@@ -416,7 +416,7 @@ repository subpath. Each push to `master` that passes is published to GitHub Pag
 | `src/people_client.rs` | Adding people: checking against Net2, creating, and download |
 | `src/manage.rs` | The year change plan, a leaver's record with its new expiry, and access-level changes |
 | `src/manage_client.rs` | Managing people: moving, leavers, undo, cards, access levels, temporary access, the year change and purge |
-| `src/manage_site_client.rs` | Manage reports and actions: site activity, roll call, unknown cards and door commands |
+| `src/manage_site_client.rs` | Manage reports and actions: site activity, unknown cards and door commands |
 | `src/lib.rs` | Shared protocol library and WebAssembly entry point |
 | `PROTOCOL.md` | The reverse-engineered protocol |
 | `src/style.css` | Page styling |

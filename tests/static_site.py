@@ -166,11 +166,6 @@ window.fetch = async (url, init = {}) => {
         {userID: 8, deviceName: 'Reception', eventTime: '2027-07-23T08:00:00', eventDescription: 'Access permitted'},
         {userID: 9, deviceName: 'Side entrance', eventTime: '2027-07-23T09:00:00', eventDescription: 'Wrong person'},
     ]);
-    if (path === '/rollcallreports') return reply(200, [{id: 1, areaGroup: {name: 'Campus'}, dateTimeCreated: '2027-07-23T10:00:00'}]);
-    if (path === '/rollcallreports/1/reportitems') return reply(200, [
-        {userId: 8, firstName: 'Jane', lastName: 'Doe', lastKnownPosition: 'Library',
-         lastAccessTime: '2027-07-23T08:00:00', musteredAt: 'Main gate', markedSafeBy: [{id: 1, name: 'Steward'}]},
-    ]);
     if (path === '/doors') return reply(200, [{id: 42, name: 'Reception'}]);
     if (path.startsWith('/commands/door/')) return reply(200, {output: {
         status: path.endsWith('/open') ? 'CompletedFalied' : 'CompletedOk',
@@ -1195,12 +1190,6 @@ def manage_release_workflows(b: Browser):
     b.wait_contains('manage-site-status', 'Library. Showing 1 recent Net2 events.')
     b.wait_contains('manage-site-table', 'Access permitted')
     assert 'Wrong person' not in b.text('manage-site-table')
-    b.click('manage-load-rollcalls')
-    b.wait_starts('manage-site-status', '1 available.')
-    b.js("$('manage-rollcall').value = '1'")
-    b.click('manage-show-rollcall')
-    b.wait_contains('manage-site-table', 'Main gate')
-    b.wait_contains('manage-site-table', 'Steward')
 
     b.click('manage-load-unknown')
     b.wait_starts('manage-site-status', '1 available.')

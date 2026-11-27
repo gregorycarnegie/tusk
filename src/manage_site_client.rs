@@ -77,27 +77,6 @@ async fn load_choices(state: &App, picker: &str, path: &str, label: &str) {
             .await
             .map(|body| read_named(&body))
             .map_err(|err| err.message),
-        "manage-rollcall" => records(state, path).await.map(|rows| {
-            let mut reports: Vec<_> = rows
-                .iter()
-                .filter_map(|row| {
-                    let id = int(row, "id")?;
-                    let date = text(row, "dateTimeCreated");
-                    let area =
-                        field(row, "areaGroup").map_or_else(String::new, |area| text(area, "name"));
-                    Some((
-                        date.clone(),
-                        id,
-                        format!("{} · {area} (ID {id})", visible_date(&date)),
-                    ))
-                })
-                .collect();
-            reports.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
-            reports
-                .into_iter()
-                .map(|(_, id, label)| (id, label))
-                .collect()
-        }),
         _ => records(state, path).await.map(|rows| {
             let mut seen = std::collections::HashSet::new();
             rows.iter()
@@ -191,52 +170,6 @@ async fn activity(state: &App, person: User) {
     }
 }
 
-async fn roll_call(state: &App, id: i32, label: &str) {
-    report(label, "Reading Net2…");
-    match records(state, &format!("/rollcallreports/{id}/reportitems")).await {
-        Ok(rows) => {
-            report(
-                label,
-                &format!("{} people in this Net2 report.", rows.len()),
-            );
-            table(
-                &[
-                    "Person",
-                    "User ID",
-                    "Last access",
-                    "Last known position",
-                    "Muster point",
-                    "Marked safe by",
-                ],
-                rows.iter().map(|row| {
-                    let safe = field(row, "markedSafeBy")
-                        .and_then(Value::as_array)
-                        .map(|items| {
-                            items
-                                .iter()
-                                .map(|item| text(item, "name"))
-                                .filter(|name| !name.is_empty())
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        })
-                        .unwrap_or_default();
-                    vec![
-                        format!("{} {}", text(row, "firstName"), text(row, "lastName"))
-                            .trim()
-                            .into(),
-                        int(row, "userId").map_or_else(String::new, |id| id.to_string()),
-                        visible_date(&text(row, "lastAccessTime")),
-                        text(row, "lastKnownPosition"),
-                        text(row, "musteredAt"),
-                        safe,
-                    ]
-                }),
-            );
-        }
-        Err(err) => report(label, &err),
-    }
-}
-
 async fn door_command(state: &App, id: i32, name: &str, command: &str) {
     report(name, "Sending door command…");
     match call(
@@ -273,7 +206,7 @@ async fn door_command(state: &App, id: i32, name: &str, command: &str) {
 }
 
 pub fn forget() {
-    for id in ["manage-rollcall", "manage-unknown", "manage-door"] {
+    for id in ["manage-unknown", "manage-door"] {
         fill(id, &[]);
     }
     element("manage-site-results").set_hidden(true);
@@ -282,8 +215,6 @@ pub fn forget() {
 
 pub fn render(ready: bool, one_person: bool) {
     for id in [
-        "manage-load-rollcalls",
-        "manage-show-rollcall",
         "manage-load-unknown",
         "manage-load-doors",
         "manage-open-door",
@@ -316,12 +247,6 @@ fn run(state: &App, work: impl AsyncFnOnce(&App) + 'static) {
 pub fn setup(state: &App) {
     for (button, picker, path, label) in [
         (
-            "manage-load-rollcalls",
-            "manage-rollcall",
-            "/rollcallreports",
-            "Roll call reports",
-        ),
-        (
             "manage-load-unknown",
             "manage-unknown",
             "/events/latestunknowntokens?max=20",
@@ -341,13 +266,6 @@ pub fn setup(state: &App) {
         if let Some(person) = selected_person() {
             run(&app, async move |state| activity(state, person).await);
         }
-    });
-    let app = state.clone();
-    on_click("manage-show-rollcall", move || {
-        let Some((id, label)) = picked("manage-rollcall") else {
-            return report("Roll call reports", "Load and choose a report.");
-        };
-        run(&app, async move |state| roll_call(state, id, &label).await);
     });
     let app = state.clone();
     on_click("manage-assign-unknown", move || {
