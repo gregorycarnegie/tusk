@@ -933,10 +933,10 @@ def saving_cards_straight_to_net2(b: Browser):
     assert b.js("return dispatchEvent(new Event('beforeunload', {cancelable: true}))")
     b.click('batch-download')
     assert b.downloaded('Net2 - Year 7-cards.csv') == [
-        ['User ID', 'First name', 'Surname', 'Card Number'],
-        ['8', 'Jane', 'Doe', ''],
-        ['9', 'Old', 'Leaver', ''],
-        ['12', 'John', 'Roe', '34935100'],
+        ['User ID', 'First name', 'Surname', 'Card Number', 'Result'],
+        ['8', 'Jane', 'Doe', '', 'Kept'],
+        ['9', 'Old', 'Leaver', '', 'Expired'],
+        ['12', 'John', 'Roe', '34935100', 'Saved to Net2'],
     ]
 
 

@@ -320,6 +320,8 @@ impl Batch {
         };
         self.rows[index].eligible &= !kept;
         self.rows[index].unsure = unsure;
+        // Only the page knows who to check, so leaving it must warn.
+        self.dirty |= unsure;
         self.running &= !stop && self.current().is_some();
         self.notice = message;
     }
@@ -368,13 +370,23 @@ impl Batch {
         }
     }
 
+    /// A direct queue also gets a Result column, so the file says which
+    /// people still need checking in Net2.
     pub fn export(&self) -> Result<Vec<u8>, String> {
+        let direct = self.net2_ids.is_some();
+        let mut headers = self.headers.clone();
+        if direct {
+            headers.push("Result".into());
+        }
         let rows = self.rows.iter().enumerate().map(|(index, row)| {
             let mut fields = row.fields.clone();
             fields[self.card_column] = self.value(index);
+            if direct {
+                fields.push(self.row_status(index).into());
+            }
             fields
         });
-        crate::sheet::write_csv(&self.headers, rows, self.bom)
+        crate::sheet::write_csv(&headers, rows, self.bom)
     }
 }
 
@@ -523,10 +535,15 @@ mod tests {
         batch.refused("No answer.".into(), false, true, true);
         assert_eq!(batch.row_status(2), "Check in Net2");
         assert!(!batch.running && batch.current().is_none());
+        assert!(batch.dirty, "an unknown outcome is unsaved work");
         let exported = String::from_utf8(batch.export().unwrap()).unwrap();
-        assert!(exported.starts_with(
-            "User ID,First name,Surname,Card Number\r\n8,Jane,Doe,\r\n9,(No name),,34935097\r\n"
-        ));
+        assert_eq!(
+            exported,
+            "User ID,First name,Surname,Card Number,Result\r\n\
+             8,Jane,Doe,,Kept\r\n\
+             9,(No name),,34935097,Saved to Net2\r\n\
+             12,John,Roe,,Check in Net2\r\n"
+        );
     }
 
     fn card(n: u32) -> Token {

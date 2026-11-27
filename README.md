@@ -279,7 +279,11 @@ Net2. The new card always goes in first, so a failure leaves them with both
 cards rather than none, and the result says which old card to mark lost by
 hand. People whose Net2 access has expired are listed as **Expired** and left
 out of the queue. Saved cards cannot be undone from Tusk; remove them in Net2.
-**Download CSV** still gives you a record with each person's Net2 user ID.
+**Download CSV** still gives you a record with each person's Net2 user ID and
+a **Result** column: Saved to Net2, Kept, Skipped, Expired, Waiting, or
+**Check in Net2** when Net2 did not say whether the card was saved. Tusk warns
+before you leave the page while any result needs checking and has not been
+downloaded.
 
 Session renewal, expiry dates and marking old cards lost are tested on a real
 Net2: the old card showed as lost in Net2 and was refused at a door.

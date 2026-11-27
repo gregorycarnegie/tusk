@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-27
+
+### Fixed
+
+- **Cards straight to Net2 keeps its results.** The downloaded CSV has a
+  Result column (Saved to Net2, Kept, Skipped, Expired, Waiting or Check in
+  Net2), so a save Net2 never confirmed can still be found after the tab is
+  closed. Leaving the page now warns while such a result is not downloaded.
+
 ## [0.6.0] - 2026-11-27
 
 Roll call reports are gone, so every Net2 workflow left in Tusk has been
@@ -467,7 +476,8 @@ because each was a wrong assumption worth remembering:
   reports.
 - Tokens are assumed to be 4 to 8 bytes. Longer ones would be ignored.
 
-[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/gregorycarnegie/tusk/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/gregorycarnegie/tusk/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.3...v0.5.0
 [0.5.0-beta.3]: https://github.com/gregorycarnegie/tusk/compare/v0.5.0-beta.2...v0.5.0-beta.3
