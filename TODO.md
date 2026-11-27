@@ -101,7 +101,11 @@ Still to check:
       path's user ID (body `userIds` is ignored), and *replaces* the person's
       access level; revoking (204) puts their own level back. When it runs
       out, Net2 puts their own level back by itself within two minutes.
-- [ ] Temporary access at a door.
+- [x] Temporary access at a real door (2026-11-27, lift reader, level
+      "Student Lift Hours"): the card opened while it was active, was refused
+      a minute after it ended (09:54 yes, 09:56 no, end 09:55), and was
+      refused straight after a revoke. Net2's own user screen shows what Tusk
+      set as its "Temporary permissions".
 - [x] Replace a card on the Manage tab with the desk reader (2026-11-25):
       the new card is saved and the old one is marked lost.
 - [x] Add people with several `;`-separated access levels: Net2 kept only
